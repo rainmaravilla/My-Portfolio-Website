@@ -1,0 +1,2990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vendor Document Validator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; color: #0f172a; min-height: 100vh; }
+
+    /* ── Header ── */
+    .site-header { background: #0f172a; color: white; position: relative; overflow: hidden; }
+    .site-header::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 75% 50%, rgba(37,99,235,0.3) 0%, transparent 60%), radial-gradient(ellipse at 10% 80%, rgba(99,102,241,0.2) 0%, transparent 55%); pointer-events: none; }
+    .site-header-inner { max-width: 1100px; margin: 0 auto; padding: 22px 32px; display: flex; align-items: center; justify-content: space-between; gap: 20px; position: relative; }
+    .site-logo { display: flex; align-items: center; gap: 14px; }
+    .logo-icon { display: flex; align-items: center; flex-shrink: 0; }
+    .logo-icon img { height: 36px; width: auto; filter: brightness(0) invert(1); }
+    .logo-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.2); margin: 0 16px; flex-shrink: 0; }
+    .logo-text h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; color: rgba(255,255,255,0.9); }
+    .logo-text p { margin-top: 2px; font-size: 11px; color: rgba(255,255,255,0.45); }
+    .header-pills { display: flex; gap: 8px; flex-shrink: 0; }
+    .header-pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); }
+    .header-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .header-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16); border-radius: 7px; padding: 7px 14px; font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,0.85); cursor: pointer; transition: background 0.15s; }
+    .header-btn:hover { background: rgba(255,255,255,0.18); }
+
+    /* ── Layout ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 28px 24px 48px; }
+
+    /* ── Upload cards ── */
+    .detected-files { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .detected-file-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: white; border: 1px solid #edf0f8; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+    .detected-type-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 99px; white-space: nowrap; flex-shrink: 0; }
+    .type-bank  { background: #e0f2fe; color: #0369a1; }
+    .type-coupa { background: #ede9fe; color: #6d28d9; }
+    .type-tax   { background: #fef3c7; color: #92400e; }
+    .detected-file-name { flex: 1; font-size: 12px; color: #4a5568; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .detected-classifying { font-size: 12px; color: #718096; font-style: italic; padding: 4px 0; }
+    .type-btn { cursor: pointer; border: none; background: inherit; font: inherit; color: inherit; padding: inherit; border-radius: inherit; display: flex; align-items: center; gap: 4px; }
+    .type-btn::after { content: '▾'; font-size: 9px; opacity: 0.6; }
+    .type-dropdown { position: relative; flex-shrink: 0; }
+    .type-options { display: none; position: absolute; top: calc(100% + 4px); left: 0; background: white; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 300; min-width: 150px; overflow: hidden; }
+    .type-options.open { display: block; }
+    .type-option { padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+    .type-option:hover { background: #f7fafc; }
+    .type-option .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-bank  { background: #0369a1; }
+    .dot-coupa { background: #6d28d9; }
+    .dot-tax   { background: #92400e; }
+
+    .card { background: white; border-radius: 14px; border: 1.5px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04); transition: border-color 0.2s, box-shadow 0.2s; overflow: hidden; }
+    .card-header { padding: 16px 20px 12px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; gap: 12px; }
+    .card-icon { width: 36px; height: 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .card-icon-1 { background: linear-gradient(135deg, #dbeafe, #bfdbfe); }
+    .card-icon svg { width: 18px; height: 18px; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    .card-icon-1 svg { stroke: #1d4ed8; }
+    .card-title { font-size: 14px; font-weight: 700; color: #0f172a; }
+    .card-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .card-body { padding: 16px 20px 18px; }
+
+    .drop-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 190px; cursor: pointer; border-radius: 16px; border: 2px dashed #c8d6ee; transition: all 0.2s; padding: 24px 16px 20px; background: linear-gradient(160deg, #f5f8ff 0%, #eef2ff 100%); position: relative; overflow: hidden; }
+    .drop-zone:hover { border-color: #7ba4d9; background: linear-gradient(160deg, #eef3ff 0%, #e4ebff 100%); }
+    .drop-zone input[type="file"] { display: none; }
+    .drop-icon { width: 42px; height: 42px; stroke: #7ba4d9; stroke-width: 1.6; fill: none; margin-bottom: 12px; }
+    .drop-label { color: #4a6fa5; font-size: 13px; font-weight: 700; margin-bottom: 2px; text-align: center; }
+    .drop-sublabel { font-size: 10.5px; color: #8fa8c8; text-align: center; }
+    /* Detected file rows — card style */
+    .file-type-icon { width: 42px; height: 50px; border-radius: 8px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 5px; font-size: 8px; font-weight: 800; color: rgba(255,255,255,0.95); letter-spacing: 0.4px; flex-shrink: 0; position: relative; cursor: pointer; transition: transform 0.15s, filter 0.15s; }
+    .file-type-icon:hover { transform: scale(1.1); filter: brightness(1.12); }
+    .file-type-icon::after { content: ''; position: absolute; top: 0; right: 0; width: 10px; height: 10px; background: rgba(255,255,255,0.22); border-radius: 0 7px 0 7px; }
+    .icon-bank  { background: linear-gradient(145deg, #74b4f8, #3b82f6); box-shadow: 0 2px 6px rgba(59,130,246,0.3); }
+    .icon-coupa { background: linear-gradient(145deg, #b8a6f8, #7c3aed); box-shadow: 0 2px 6px rgba(124,58,237,0.3); }
+    .icon-tax   { background: linear-gradient(145deg, #fcd570, #f5a623); box-shadow: 0 2px 6px rgba(245,166,35,0.3); }
+
+    .file-pill { display: flex; align-items: center; gap: 8px; margin-top: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 8px 10px; font-size: 12px; color: #0369a1; font-weight: 500; }
+    .file-pill-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-pill .remove-btn { cursor: pointer; color: #7dd3fc; font-size: 18px; line-height: 1; border: none; background: none; padding: 0; flex-shrink: 0; }
+    .file-pill .remove-btn:hover { color: #0369a1; }
+    .file-pill .view-btn { cursor: pointer; background: #dbeafe; border: none; border-radius: 5px; padding: 4px 9px; font-size: 11px; font-weight: 700; color: #1d4ed8; transition: background 0.15s; flex-shrink: 0; }
+    .file-pill .view-btn:hover { background: #bfdbfe; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); z-index: 9999; display: none; align-items: flex-start; justify-content: center; padding: 24px 16px; overflow-y: auto; }
+    .modal-overlay.open { display: flex; }
+    .modal-box { background: white; border-radius: 14px; width: 100%; max-width: 860px; display: flex; flex-direction: column; max-height: 90vh; box-shadow: 0 25px 60px rgba(0,0,0,0.4); }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; gap: 12px; }
+    .modal-title { font-size: 14px; font-weight: 600; color: #2d3748; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .modal-controls { display: flex; gap: 6px; flex-shrink: 0; }
+    .modal-ctrl-btn { padding: 5px 12px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f7fafc; font-size: 13px; font-weight: 600; cursor: pointer; color: #4a5568; transition: background 0.15s; }
+    .modal-ctrl-btn:hover { background: #e2e8f0; }
+    .modal-ctrl-btn.close { background: #fee2e2; color: #c53030; border-color: #fca5a5; }
+    .modal-ctrl-btn.close:hover { background: #fecaca; }
+    .modal-body { overflow-y: auto; padding: 20px; flex: 1; background: #f0f4f8; }
+    .modal-content { transform-origin: top center; transition: transform 0.15s; }
+    .modal-content img { width: 100%; height: auto; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+    .modal-content canvas { display: block; width: 100%; height: auto; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+    .modal-page-label { font-size: 11px; color: #a0aec0; text-align: center; margin-bottom: 6px; }
+    .modal-zoom-level { font-size: 12px; color: #718096; padding: 5px 10px; background: #f0f4f8; border-radius: 6px; border: 1px solid #e2e8f0; min-width: 48px; text-align: center; }
+
+    .compare-wrap { background: white; border-radius: 14px; padding: 18px; border: 1.5px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 8px; display: flex; gap: 12px; align-items: center; }
+    .btn-clear { flex-shrink: 0; padding: 14px 20px; background: white; color: #64748b; border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .btn-clear svg { width: 15px; height: 15px; stroke: #94a3b8; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; transition: stroke 0.2s; }
+    .btn-clear:hover { background: #fff5f5; border-color: #fca5a5; color: #dc2626; }
+    .btn-clear:hover svg { stroke: #dc2626; }
+    .btn-clear:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-clear:disabled:hover { background: white; border-color: #e2e8f0; color: #64748b; }
+    .btn-clear:disabled:hover svg { stroke: #94a3b8; }
+    .btn-compare { width: 100%; padding: 14px 24px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 9px; box-shadow: 0 4px 14px rgba(37,99,235,0.3); letter-spacing: 0.1px; }
+    .btn-compare svg { width: 17px; height: 17px; stroke: white; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .btn-compare:hover:not(:disabled) { background: linear-gradient(135deg, #1d4ed8, #1e3a8a); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,0.4); }
+    .btn-compare:active:not(:disabled) { transform: translateY(0); }
+    .btn-compare:disabled { background: linear-gradient(135deg, #cbd5e1, #94a3b8); box-shadow: none; cursor: not-allowed; }
+
+    .results-card { background: white; border-radius: 14px; padding: 28px; margin-top: 20px; display: none; border: 1.5px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04); }
+    .results-card.visible { display: block; }
+
+    .results-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; position: sticky; top: var(--collapsed-bar-h, 0px); z-index: 20; background: white; margin: -28px -28px 20px; padding: 16px 28px; border-bottom: 1px solid #e2e8f0; border-radius: 14px 14px 0 0; }
+    .results-header h2 { font-size: 17px; font-weight: 700; }
+
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge { padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 700; }
+    .badge-mismatch { background: #fff5f5; color: #c53030; border: 1.5px solid #fc8181; }
+    .badge-missing  { background: #fffbeb; color: #b7791f; border: 1.5px solid #f6e05e; }
+    .badge-match    { background: #f0fff4; color: #276749; border: 1.5px solid #68d391; }
+    .all-match-bar { display: flex; align-items: center; gap: 10px; background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; font-size: 13px; font-weight: 600; color: #276749; }
+    .all-match-bar svg { width: 15px; height: 15px; stroke: #38a169; stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .all-match-sub { font-weight: 400; color: #68d391; margin-left: 2px; }
+
+    .alert { border-radius: 8px; padding: 12px 16px; font-size: 13px; margin-bottom: 18px; display: flex; gap: 10px; align-items: flex-start; }
+    .alert-warn    { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+    .alert-info    { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+    .alert-manual  { background: #fff7ed; color: #9a3412; border: 1.5px solid #fb923c; border-radius: 10px; padding: 14px 18px; display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .alert-manual-icon { font-size: 26px; flex-shrink: 0; }
+    .alert-manual-title { font-size: 15px; font-weight: 800; }
+    .alert-manual-sub   { font-size: 12px; margin-top: 3px; opacity: 0.8; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    thead th { padding: 10px 14px; background: #f7fafc; color: #718096; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; text-align: left; }
+    tbody td { padding: 11px 14px; border-bottom: 1px solid #f0f4f8; vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #f7fafc; }
+
+    .group-header td { background: #eef2ff; color: #3730a3; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; padding: 8px 14px; border-bottom: 2px solid #c7d2fe; }
+    .btn-verify { margin-top: 6px; display: inline-block; font-size: 11px; padding: 4px 10px; border-radius: 5px; border: 1px solid #d97706; background: #fffbeb; color: #92400e; cursor: pointer; font-weight: 600; transition: all 0.15s; white-space: nowrap; }
+    .btn-verify:hover { background: #fef3c7; border-color: #b45309; transform: translateY(-1px); }
+    .status-manually-verified { color: #0369a1; font-weight: 700; font-size: 12px; }
+    .manually-verified-badge { font-size: 11px; font-weight: 700; color: #0369a1; background: #e0f2fe; border-radius: 4px; padding: 2px 8px; display: inline-block; border: 1px solid #bae6fd; }
+    tr.row-verified td { background: #f0fdf4 !important; }
+    .all-verified-banner { display: none; align-items: center; gap: 10px; background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; font-size: 13px; font-weight: 600; color: #276749; }
+    .all-verified-banner svg { width: 15px; height: 15px; stroke: #38a169; stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .field-name { font-weight: 600; color: #2d3748; }
+    .priority-high .field-name::after { content: ' *'; color: #fc8181; font-size: 11px; }
+
+    .val { display: inline-block; padding: 3px 8px; border-radius: 5px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; word-break: break-all; }
+    .val-match    { background: #f0fff4; color: #22543d; }
+    .val-mismatch { background: #fff5f5; color: #742a2a; }
+    .val-missing  { background: #f7fafc; color: #a0aec0; font-style: italic; }
+
+    .status { font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .status-match    { color: #276749; }
+    .status-mismatch { color: #c53030; }
+    .status-missing  { color: #b7791f; }
+
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+
+    .raw-section { display: none !important; }
+    .text-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .text-grid { grid-template-columns: 1fr; } }
+    .text-box-label { font-size: 11px; font-weight: 600; color: #a0aec0; margin-bottom: 6px; }
+    .text-box { background: #f7fafc; border-radius: 8px; padding: 12px; max-height: 220px; overflow-y: auto; font-size: 11.5px; font-family: 'SF Mono', 'Fira Code', monospace; color: #4a5568; white-space: pre-wrap; word-break: break-word; border: 1px solid #e2e8f0; line-height: 1.5; }
+
+    .loading { text-align: center; padding: 48px 20px; color: #718096; }
+    .spinner { width: 36px; height: 36px; border: 3px solid #e2e8f0; border-top-color: #1a56db; border-radius: 50%; animation: spin 0.75s linear infinite; margin: 0 auto 14px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .vendor-name-line { font-size: 22px; font-weight: 700; color: #1a202c; margin-bottom: 0; display: flex; align-items: center; gap: 8px; }
+    .vendor-name-line svg { width: 15px; height: 15px; stroke: #718096; stroke-width: 2; fill: none; flex-shrink: 0; }
+    .vendor-meta { font-size: 12.5px; color: #4a5568; margin-bottom: 4px; display: flex; align-items: flex-start; gap: 7px; }
+    .vendor-meta:last-child { margin-bottom: 0; }
+    .vendor-meta svg { width: 12px; height: 12px; stroke: #a0aec0; stroke-width: 2; fill: none; flex-shrink: 0; margin-top: 2px; stroke-linecap: round; stroke-linejoin: round; }
+    .country-line { font-size: 12.5px; color: #4a5568; margin-bottom: 0; }
+    .vendor-meta-label { font-weight: 600; color: #2d3748; }
+    .vendor-info-wrap { display: flex; gap: 16px; align-items: stretch; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }
+    .vendor-info-main { flex: 1; min-width: 0; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; }
+    .vendor-info-divider { border: none; border-top: 1px solid #e2e8f0; margin: 10px 0; }
+    .vendor-contact-panel { flex-shrink: 0; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; min-width: 220px; max-width: 300px; }
+    .vendor-contact-title { font-size: 10px; font-weight: 700; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .vendor-contact-row { font-size: 12px; color: #4a5568; margin-bottom: 5px; display: flex; align-items: flex-start; gap: 6px; }
+    .vendor-contact-row:last-child { margin-bottom: 0; }
+    .vendor-contact-row svg { width: 12px; height: 12px; stroke: #a0aec0; stroke-width: 2; fill: none; flex-shrink: 0; margin-top: 1px; stroke-linecap: round; stroke-linejoin: round; }
+    .vendor-contact-row a { color: #4a5568; text-decoration: none; }
+    .phone-tip { position: relative; cursor: default; }
+    .phone-tip::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 7px); left: 0; background: #1a202c; color: #fff; font-size: 11px; font-weight: 500; white-space: nowrap; padding: 5px 9px; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; }
+    .phone-tip::before { content: ''; position: absolute; bottom: calc(100% + 2px); left: 12px; border: 5px solid transparent; border-top-color: #1a202c; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; }
+    .phone-tip:hover::after, .phone-tip:hover::before { opacity: 1; }
+    .vendor-contact-row a:hover { color: #2b6cb0; text-decoration: underline; }
+    .vc-label { font-weight: 600; color: #718096; white-space: nowrap; margin-right: 2px; }
+    .tf-badge { font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; position: relative; cursor: default; }
+    .tf-verified { color: #276749; background: #d1fae5; }
+    .tf-missing  { color: #9b2c2c; background: #fee2e2; }
+    .tf-badge::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%); background: #1a202c; color: #fff; font-size: 11px; font-weight: 500; white-space: nowrap; padding: 5px 9px; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; }
+    .tf-badge::before { content: ''; position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #1a202c; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200; }
+    .tf-badge:hover::after, .tf-badge:hover::before { opacity: 1; }
+    .country-line { font-size: 14px; color: #2d3748; margin-bottom: 16px; }
+    .country-label { font-weight: 700; color: #4a5568; }
+    .detected-as { font-size: 10px; color: #a0aec0; margin-top: 3px; }
+    .ach-valid   { font-size: 10px; font-weight: 700; color: #276749; background: #d1fae5; border-radius: 4px; padding: 1px 6px; margin-top: 4px; display: inline-block; }
+    .ach-invalid { font-size: 10px; font-weight: 700; color: #9b1c1c; background: #fee2e2; border-radius: 4px; padding: 1px 6px; margin-top: 4px; display: inline-block; }
+    .val-hint { background: #fefce8; color: #854d0e; border: 1px dashed #fbbf24; }
+    .hint-note { font-size: 10px; color: #b45309; margin-top: 3px; }
+    .diff-cell { font-size: 12px; line-height: 1.6; color: #4a5568; }
+    .diff-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; }
+    .diff-label { font-size: 10px; font-weight: 700; color: #718096; min-width: 68px; }
+    .diff-common { font-family: monospace; color: #718096; }
+    .diff-hi1 { font-family: monospace; background: #fed7d7; color: #9b1c1c; padding: 0 3px; border-radius: 3px; font-weight: 600; }
+    .diff-hi2 { font-family: monospace; background: #dbeafe; color: #1e3a8a; padding: 0 3px; border-radius: 3px; font-weight: 600; }
+    .diff-absent { font-size: 11px; color: #b7791f; font-style: italic; }
+    .no-extract { color: #718096; padding: 20px 0; font-size: 14px; line-height: 1.7; }
+    .footer-note { font-size: 11px; color: #94a3b8; margin-top: 16px; text-align: center; }
+
+    /* File meta badge */
+    .file-meta { font-size: 10px; color: #94a3b8; font-weight: 400; margin-left: 4px; }
+
+    /* Toast notification */
+    .toast { position: fixed; bottom: 28px; right: 28px; background: #0f172a; color: #fff; padding: 10px 18px; border-radius: 9px; font-size: 13px; font-weight: 500; z-index: 99999; opacity: 0; transform: translateY(10px); transition: opacity 0.22s, transform 0.22s; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* Drag-and-drop visual polish */
+    .drop-zone { transition: background 0.15s, border-color 0.15s, transform 0.12s, box-shadow 0.12s; }
+    .drop-zone.drag-active { background: #eff6ff !important; border-color: #2563eb !important; border-style: solid !important; transform: scale(1.025); box-shadow: 0 0 0 4px rgba(37,99,235,0.12); }
+
+    /* Collapsible groups */
+    .group-header { cursor: pointer; user-select: none; }
+    .group-header:hover td { background: #e0e7ff !important; }
+    .toggle-arrow { float: right; transition: transform 0.2s; font-style: normal; margin-left: 8px; }
+    .group-header.collapsed .toggle-arrow { transform: rotate(-90deg); }
+
+    /* Export buttons */
+    .export-wrap { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn-export { padding: 5px 12px; border-radius: 7px; border: 1.5px solid #e2e8f0; background: white; font-size: 12px; font-weight: 600; color: #4a5568; cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 5px; }
+    .btn-export:hover { background: #f7fafc; border-color: #cbd5e0; color: #1a202c; }
+    .btn-export svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+
+    .mismatch-reason { font-size: 10.5px; color: #744210; background: #fefce8; border-left: 2px solid #f6ad55; padding: 4px 8px; border-radius: 0 5px 5px 0; margin-top: 5px; line-height: 1.4; }
+
+    /* Remit-To Address section */
+    .remit-section { border: 1px solid #e2e8f0; border-radius: 10px; margin: 14px 0 4px; overflow: hidden; }
+    .remit-toggle { width: 100%; background: #f8fafc; border: none; padding: 11px 16px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #2d3748; text-align: left; }
+    .remit-toggle:hover { background: #f1f5f9; }
+    .remit-toggle-arrow { font-size: 10px; color: #94a3b8; transition: transform 0.2s; margin-right: 2px; }
+    .remit-section.rt-collapsed .remit-toggle-arrow { transform: rotate(-90deg); }
+    .remit-section.rt-collapsed .remit-body { display: none; }
+    .remit-body { padding: 14px 16px; border-top: 1px solid #e2e8f0; }
+    .remit-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .remit-table tr + tr td { border-top: 1px solid #f1f5f9; }
+    .remit-table td { padding: 7px 10px; }
+    .remit-label { font-weight: 600; color: #4a5568; width: 160px; }
+    .remit-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-left: auto; white-space: nowrap; }
+    .remit-match { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+    .remit-diff  { background: #fffbeb; color: #b7791f; border: 1px solid #f6e05e; }
+    .remit-warn-box { margin-top: 12px; padding: 9px 12px; background: #fffbeb; border: 1px solid #f6ad55; border-radius: 7px; font-size: 12px; color: #744210; display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+
+    /* Auto-detect warning */
+    .autodetect-banner { background: #fffbeb; border: 1px solid #f6ad55; border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; color: #744210; display: flex; align-items: center; gap: 10px; }
+    .autodetect-banner svg { width: 16px; height: 16px; stroke: #d97706; stroke-width: 2; fill: none; flex-shrink: 0; }
+
+    /* Draft resume banner */
+    .draft-resume-banner { display: flex; align-items: center; gap: 12px; background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #1e40af; }
+    .draft-resume-banner .drb-text { flex: 1; }
+    .draft-resume-banner button { flex-shrink: 0; padding: 6px 12px; border-radius: 7px; border: 1px solid #bfdbfe; background: white; font-size: 12px; font-weight: 600; color: #1e40af; cursor: pointer; }
+    .draft-resume-banner button:hover { background: #dbeafe; }
+
+    /* Verify note inline form */
+    .verify-note-box { margin-top: 8px; padding: 10px; background: #fffbeb; border: 1px solid #f6ad55; border-radius: 8px; }
+    .verify-note-box textarea { width: 100%; min-height: 52px; font-size: 12px; font-family: inherit; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px; resize: vertical; }
+    .verify-note-box .vnb-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .verify-note-box .vnb-actions button { font-size: 11.5px; font-weight: 600; padding: 4px 11px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+    .vnb-save { background: #2563eb; color: white; }
+    .vnb-save:hover { background: #1d4ed8; }
+    .vnb-cancel { background: white; border-color: #e2e8f0; color: #64748b; }
+    .vnb-cancel:hover { background: #f7fafc; }
+    .verified-note-display { font-size: 11.5px; color: #276749; background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 6px; padding: 6px 9px; margin-top: 4px; line-height: 1.4; }
+    .verified-note-display .vnd-meta { font-weight: 700; }
+    .verified-note-display .vnd-text { color: #22543d; font-style: italic; margin-top: 2px; }
+
+    /* History panel — review log with drill-down detail */
+    .history-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+    .history-stat { background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; text-align: center; }
+    .history-stat .hs-val { font-size: 20px; font-weight: 800; color: #1a202c; }
+    .history-stat .hs-label { font-size: 10.5px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 2px; }
+    .history-toolbar { display: flex; gap: 8px; margin-bottom: 14px; }
+    .history-table-wrap { max-height: 60vh; overflow-y: auto; }
+    .history-table-wrap tbody tr:hover td { background: #f7fafc; cursor: pointer; }
+    .history-empty { text-align: center; padding: 40px 20px; color: #a0aec0; font-size: 13px; }
+
+    /* Print styles */
+    @media print {
+      .site-header, .upload-grid, .compare-wrap, .modal-overlay, .btn-verify, .export-wrap, .raw-section, .btn-clear, .footer-note, .draft-resume-banner, .vnb-actions { display: none !important; }
+      .results-card { border: none; box-shadow: none; padding: 0; }
+      .results-header { position: static; border-bottom: 2px solid #e2e8f0; margin: 0 0 16px; padding: 0 0 12px; border-radius: 0; }
+      body { background: white; }
+    }
+
+    /* Collapsed upload bar */
+    /* Sticky so which files you're comparing stays visible while scrolling a long
+       results table — stacks above the results table's own sticky header via
+       --collapsed-bar-h (set/cleared in JS to the bar's actual rendered height). */
+    .upload-collapsed-bar { display: none; position: sticky; top: 0; z-index: 21; background: white; border-radius: 12px; border: 1.5px solid #e2e8f0; box-shadow: 0 1px 4px rgba(0,0,0,0.05); padding: 10px 16px; margin-bottom: 16px; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .upload-collapsed-item { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .upload-collapsed-icon { width: 32px; height: 38px; border-radius: 7px; font-size: 7px; font-weight: 800; color: rgba(255,255,255,0.95); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; flex-shrink: 0; position: relative; cursor: pointer; transition: transform 0.15s, filter 0.15s; letter-spacing: 0.4px; }
+    .upload-collapsed-icon::after { content: ''; position: absolute; top: 0; right: 0; width: 9px; height: 9px; background: rgba(255,255,255,0.2); border-radius: 0 6px 0 6px; }
+    .upload-collapsed-icon:hover { transform: scale(1.1); filter: brightness(1.12); }
+    .upload-collapsed-name { font-size: 12px; color: #4a5568; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .upload-collapsed-sep { width: 1px; height: 28px; background: #e2e8f0; flex-shrink: 0; }
+    .upload-change-btn { font-size: 12px; font-weight: 600; color: #4a5568; background: #f7fafc; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 6px 14px; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background 0.15s; }
+    .upload-change-btn:hover { background: #edf2f7; color: #2d3748; }
+
+    /* Mobile-responsive table */
+    @media (max-width: 640px) {
+      table, thead, tbody, th, td, tr { display: block; }
+      thead { display: none; }
+      tbody tr[id^="row-"] { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 10px; overflow: hidden; background: white; }
+      tbody tr[id^="row-"] td { padding: 8px 14px; border-bottom: 1px solid #f0f4f8; display: flex; align-items: flex-start; gap: 10px; font-size: 13px; }
+      tbody tr[id^="row-"] td::before { content: attr(data-label); font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.4px; min-width: 76px; flex-shrink: 0; padding-top: 4px; }
+      tbody tr[id^="row-"] td:last-child { border-bottom: none; }
+      .group-header td { display: block; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <div class="site-logo">
+      <div class="logo-icon">
+        <img src="Okta Logo.png" alt="Okta" />
+      </div>
+      <div class="logo-divider"></div>
+      <div class="logo-text">
+        <h1>Vendor Document Validator</h1>
+        <p>Automated bank, Coupa & tax verification</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="header-btn" id="btnHistory" onclick="openHistoryPanel()">History</button>
+    </div>
+  </div>
+</header>
+<div id="draftBanner"></div>
+
+<div class="container">
+  <!-- Collapsed upload bar (shown after comparison) -->
+  <div class="upload-collapsed-bar" id="uploadCollapsed"></div>
+
+  <!-- Full upload area (hidden after comparison) -->
+  <div id="uploadArea">
+  <div class="card" id="cardUploadAll">
+    <div class="card-header">
+      <div class="card-icon card-icon-1">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:#1d4ed8;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg>
+      </div>
+      <div>
+        <div class="card-title">Upload Documents</div>
+        <div class="card-sub">Drop your files below — we'll sort them automatically</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="drop-zone" id="dropAll">
+        <input type="file" id="fileMulti" multiple accept=".pdf,.png,.jpg,.jpeg,.docx" />
+        <svg class="drop-icon" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg>
+        <div class="drop-label">Click to upload or drag &amp; drop</div>
+        <div class="drop-sublabel">Bank Document + Coupa Form required &middot; Tax Form optional &middot; PDF, PNG, JPG, DOCX</div>
+      </div>
+      <div class="detected-files" id="detectedFiles"></div>
+    </div>
+  </div>
+
+  <div class="compare-wrap">
+    <button class="btn-compare" id="btnCompare" disabled onclick="compareDocuments()">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Upload Bank Document & Coupa Form to compare
+    </button>
+    <button class="btn-clear" id="btnClear" disabled onclick="clearAll()" title="Start a new validation">
+      <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>
+      New Validation
+    </button>
+  </div>
+  </div><!-- end #uploadArea -->
+
+  <div class="results-card" id="results"></div>
+</div>
+
+<!-- Document Preview Modal -->
+<div id="docModal" class="modal-overlay" onclick="closeModalOnBg(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle"></span>
+      <div class="modal-controls">
+        <span class="modal-zoom-level" id="zoomLabel">100%</span>
+        <button class="modal-ctrl-btn" onclick="zoomModal(-0.25)" title="Zoom out">−</button>
+        <button class="modal-ctrl-btn" onclick="zoomModal(0.25)" title="Zoom in">+</button>
+        <button class="modal-ctrl-btn" onclick="zoomModal('reset')" title="Reset zoom">Reset</button>
+        <button class="modal-ctrl-btn close" onclick="closeModal()">✕ Close</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-content" id="modalContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Vendor Approval History Modal -->
+<div id="historyModal" class="modal-overlay" onclick="closeHistoryOnBg(event)">
+  <div class="modal-box" style="max-width:980px;">
+    <div class="modal-header">
+      <span class="modal-title">Vendor Approval History</span>
+      <div class="modal-controls">
+        <button class="modal-ctrl-btn close" onclick="closeHistoryPanel()">✕ Close</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-content" id="historyContent"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const state = { file1: null, file2: null, file3: null };
+  let lastRows = [];
+  let lastVendorName = null;
+  let verifiedNotes = {};
+  let historyViewKey = null; // set while viewing a past record from History (no live files loaded)
+
+  // ── Persistence keys ──────────────────────────────────────────────
+  const LS_HISTORY = 'vdc_history';
+  const LS_DRAFT   = 'vdc_draft';
+
+  function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    renderDraftBanner();
+    refreshButton();
+
+    // One-time cleanup: the history schema changed from an approve/reject decision
+    // log to a simple review log — drop any old-format entries so they don't render
+    // with missing fields.
+    try {
+      const existing = JSON.parse(localStorage.getItem(LS_HISTORY) || '[]');
+      if (existing.some(r => !r.rows)) localStorage.removeItem(LS_HISTORY);
+    } catch (e) { localStorage.removeItem(LS_HISTORY); }
+  });
+
+  // ── Draft autosave (verification notes survive an accidental refresh) ────
+  // File blobs can't be restored across a reload, so this only preserves the
+  // reviewer's in-progress notes/date — re-uploading the same files re-applies them.
+  function draftKey() {
+    if (historyViewKey) return historyViewKey;
+    return [state.file1, state.file2, state.file3].filter(Boolean).map(f => f.name + ':' + f.size).join('|');
+  }
+  function saveDraft() {
+    const key = draftKey();
+    if (!key) return;
+    const draft = {
+      key,
+      vendorName: lastVendorName || null,
+      verifiedNotes,
+      savedAt: new Date().toLocaleString()
+    };
+    localStorage.setItem(LS_DRAFT, JSON.stringify(draft));
+  }
+  function loadDraft() {
+    try { return JSON.parse(localStorage.getItem(LS_DRAFT) || 'null'); } catch (e) { return null; }
+  }
+  function clearDraft() {
+    localStorage.removeItem(LS_DRAFT);
+    renderDraftBanner();
+  }
+  function renderDraftBanner() {
+    const el = document.getElementById('draftBanner');
+    if (!el) return;
+    const draft = loadDraft();
+    if (!draft) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="draft-resume-banner" style="max-width:1100px;margin:12px auto 0;">
+      <span class="drb-text">📝 You have an unsaved in-progress review${draft.vendorName ? ` for <strong>${escHtml(draft.vendorName)}</strong>` : ''} from ${escHtml(draft.savedAt)} — re-upload the same files to resume; your notes will be restored automatically.</span>
+      <button onclick="dismissDraftBanner()">Dismiss</button>
+    </div>`;
+  }
+  function dismissDraftBanner() {
+    const el = document.getElementById('draftBanner');
+    if (el) el.innerHTML = '';
+  }
+  function applyDraftIfMatching() {
+    const draft = loadDraft();
+    if (!draft || draft.key !== draftKey()) return;
+    verifiedNotes = draft.verifiedNotes || {};
+    Object.keys(verifiedNotes).forEach(key => {
+      const row = document.getElementById('row-' + key);
+      const statusCell = document.getElementById('status-' + key);
+      const diffCell = document.getElementById('diff-' + key);
+      if (!row || !statusCell) return;
+      const vn = verifiedNotes[key];
+      row.classList.add('row-verified');
+      statusCell.className = 'status status-manually-verified';
+      statusCell.innerHTML = '✓ Verified';
+      if (diffCell) diffCell.innerHTML = `<div class="verified-note-display"><div class="vnd-meta">✓ Verified on ${escHtml(vn.timestamp)}</div>${vn.note ? `<div class="vnd-text">"${escHtml(vn.note)}"</div>` : ''}</div>`;
+    });
+    if (Object.keys(verifiedNotes).length) {
+      checkAllVerified();
+      showToast('Restored your in-progress notes for this vendor');
+    }
+    dismissDraftBanner();
+  }
+
+  // ── Vendor review log (localStorage) ─────────────────────────────────────
+  // Every completed comparison — and every note added afterward — is
+  // upserted here (keyed by the file set) so you can reopen it later from
+  // the History panel without re-uploading/re-extracting anything.
+  function loadHistory() {
+    try { return JSON.parse(localStorage.getItem(LS_HISTORY) || '[]'); } catch (e) { return []; }
+  }
+  function saveReviewSnapshot() {
+    const key = draftKey();
+    if (!key || !lastRows.length) return;
+    const log = loadHistory();
+    const idx = log.findIndex(r => r.key === key);
+    // When re-noting from inside a restored history view, no live files are
+    // loaded — keep the original filenames instead of overwriting with [].
+    const liveFilenames = [state.file1, state.file2, state.file3].filter(Boolean).map(f => f.name);
+    const filenames = liveFilenames.length ? liveFilenames : (idx >= 0 ? log[idx].filenames : []);
+    const resultsEl = document.getElementById('results');
+    const record = {
+      id: idx >= 0 ? log[idx].id : ('v' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+      key,
+      vendorName: lastVendorName || (state.file2 ? state.file2.name : 'Unknown vendor'),
+      reviewedAt: new Date().toLocaleString(),
+      matches: lastRows.filter(r => r.status === 'match').length,
+      mismatches: lastRows.filter(r => r.status === 'mismatch' && !verifiedNotes[r.key]).length,
+      missing: lastRows.filter(r => r.status === 'missing' && !verifiedNotes[r.key]).length,
+      rows: lastRows.map(r => ({ key: r.key, label: r.label, group: r.group, v1: r.v1, v2: r.v2, h1: r.h1, h2: r.h2, status: r.status, diffHtml: r.diffHtml })),
+      verifiedNotes: { ...verifiedNotes },
+      filenames,
+      // Full rendered results markup — lets "click vendor name" in History drop the
+      // approver right back onto the exact same comparison screen, not a stripped-down copy.
+      resultsHtml: resultsEl ? resultsEl.innerHTML : null
+    };
+    if (idx >= 0) log[idx] = record; else log.unshift(record);
+    if (log.length > 200) log.length = 200;
+    localStorage.setItem(LS_HISTORY, JSON.stringify(log));
+  }
+  function downloadBlob(content, type, filename) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('Exported ' + filename);
+  }
+
+  function openHistoryPanel() {
+    renderHistoryContent();
+    document.getElementById('historyModal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeHistoryPanel() {
+    document.getElementById('historyModal').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  function closeHistoryOnBg(e) {
+    if (e.target === document.getElementById('historyModal')) closeHistoryPanel();
+  }
+
+  function renderHistoryContent() {
+    const el = document.getElementById('historyContent');
+    const log = loadHistory();
+    if (!log.length) {
+      el.innerHTML = '<div class="history-empty">No vendors reviewed yet — run a comparison to add one here.</div>';
+      return;
+    }
+    const needsAttention = log.filter(r => (r.mismatches > 0 || r.missing > 0)).length;
+    const clear = log.length - needsAttention;
+
+    let html = `<div class="history-stats">
+      <div class="history-stat"><div class="hs-val">${log.length}</div><div class="hs-label">Total Reviewed</div></div>
+      <div class="history-stat"><div class="hs-val">${clear}</div><div class="hs-label">Fully Clear</div></div>
+      <div class="history-stat"><div class="hs-val">${needsAttention}</div><div class="hs-label">Needs Attention</div></div>
+    </div>
+    <div class="history-toolbar">
+      <button class="btn-export" onclick="exportHistoryCSV()">Export CSV</button>
+      <button class="btn-export" onclick="exportHistoryJSON()">Export JSON</button>
+      <button class="btn-export" onclick="importHistoryJSON()">Import JSON</button>
+      <button class="btn-export" onclick="clearHistoryConfirm()" style="color:#c53030;border-color:#fca5a5;">Clear History</button>
+      <input type="file" id="historyImportInput" accept="application/json" style="display:none" onchange="handleHistoryImportFile(event)">
+    </div>
+    <div class="history-table-wrap">
+    <table>
+      <thead><tr><th>Vendor</th><th>Reviewed</th><th>Matches</th><th>Mismatches</th><th>Missing</th><th>Status</th></tr></thead>
+      <tbody>`;
+    log.forEach(rec => {
+      const needsReview = rec.mismatches > 0 || rec.missing > 0;
+      html += `<tr onclick="viewHistoryResult('${rec.id}')">
+        <td><span style="color:#2563eb;font-weight:600;text-decoration:underline;">${escHtml(rec.vendorName || 'Unknown')}</span></td>
+        <td>${escHtml(rec.reviewedAt || '—')}</td>
+        <td>${rec.matches}</td>
+        <td>${rec.mismatches}</td>
+        <td>${rec.missing}</td>
+        <td><span class="badge ${needsReview ? 'badge-mismatch' : 'badge-match'}">${needsReview ? 'Needs Review' : 'Clear'}</span></td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    el.innerHTML = html;
+  }
+
+  // Clicking a vendor in History drops the approver back onto the exact same
+  // comparison screen (not a stripped-down copy inside the modal) — same badges,
+  // vendor info panel, and table — using the full HTML captured at review time.
+  function viewHistoryResult(id) {
+    const rec = loadHistory().find(r => r.id === id);
+    if (!rec) return;
+    closeHistoryPanel();
+    state.file1 = state.file2 = state.file3 = null;
+    lastRows = rec.rows || [];
+    verifiedNotes = rec.verifiedNotes || {};
+    lastVendorName = rec.vendorName || null;
+    historyViewKey = rec.key;
+    document.getElementById('uploadArea').style.display = 'none';
+    document.getElementById('uploadCollapsed').style.display = 'none';
+    document.documentElement.style.setProperty('--collapsed-bar-h', '0px');
+    const el = document.getElementById('results');
+    el.innerHTML = `<div class="draft-resume-banner" style="margin-bottom:16px;">
+      <span class="drb-text">📁 Viewing a past review for <strong>${escHtml(rec.vendorName || 'this vendor')}</strong> — reviewed ${escHtml(rec.reviewedAt || '')}.</span>
+      <button onclick="exitHistoryView()">Start New Validation</button>
+    </div>` + (rec.resultsHtml || '<div class="no-extract">No saved detail available for this record.</div>');
+    el.classList.add('visible');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function exitHistoryView() {
+    historyViewKey = null;
+    clearAll();
+  }
+
+  function exportHistoryCSV() {
+    const log = loadHistory();
+    const headers = ['Vendor', 'Reviewed At', 'Matches', 'Mismatches', 'Missing', 'Files'];
+    const rows = log.map(r => [r.vendorName, r.reviewedAt, r.matches, r.mismatches, r.missing, (r.filenames || []).join('; ')]);
+    const csv = [headers, ...rows].map(row => row.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    downloadBlob(csv, 'text/csv', 'vendor-review-history.csv');
+  }
+  function exportHistoryJSON() {
+    downloadBlob(JSON.stringify(loadHistory(), null, 2), 'application/json', 'vendor-review-history.json');
+  }
+  function importHistoryJSON() {
+    document.getElementById('historyImportInput').click();
+  }
+  function handleHistoryImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = JSON.parse(reader.result);
+        if (!Array.isArray(imported)) throw new Error('not an array');
+        const existing = loadHistory();
+        const existingIds = new Set(existing.map(h => h.id));
+        const newOnes = imported.filter(h => h.id && !existingIds.has(h.id));
+        const merged = [...newOnes, ...existing].slice(0, 200);
+        localStorage.setItem(LS_HISTORY, JSON.stringify(merged));
+        renderHistoryContent();
+        showToast(`Imported ${newOnes.length} record(s)`);
+      } catch (err) { showToast('Import failed — invalid file'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+  function clearHistoryConfirm() {
+    if (confirm('Clear all vendor review history? This cannot be undone.')) {
+      localStorage.removeItem(LS_HISTORY);
+      renderHistoryContent();
+      showToast('History cleared');
+    }
+  }
+
+  async function quickExtract(file) {
+    if (file.type === 'application/pdf') {
+      try {
+        const buf = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(buf).promise;
+        const page = await pdf.getPage(1);
+        const content = await page.getTextContent();
+        let text = content.items.map(i => i.str).join(' ');
+        try {
+          const anns = await page.getAnnotations();
+          text += ' ' + anns.filter(a => a.fieldName).map(a => a.fieldName).join(' ');
+        } catch(e) {}
+        return text;
+      } catch(e) { return ''; }
+    }
+    if (file.type.startsWith('image/')) {
+      // OCR images during classification too — otherwise a photographed tax
+      // document (PAN card, GST certificate) always defaults to Bank sight-unseen.
+      try {
+        const canvas = await preprocessImageForOCR(file);
+        const result = await Tesseract.recognize(canvas, 'eng');
+        return result.data.text;
+      } catch (e) { return ''; }
+    }
+    return '';
+  }
+
+  function renderDetectedFiles() {
+    const container = document.getElementById('detectedFiles');
+    if (!container) return;
+    const slots = [
+      { n: 1, label: 'Bank Document', cls: 'type-bank' },
+      { n: 2, label: 'Coupa Form',    cls: 'type-coupa' },
+      { n: 3, label: 'Tax Form',      cls: 'type-tax' },
+    ].filter(s => state['file' + s.n]);
+    if (!slots.length) { container.innerHTML = ''; return; }
+    const iconMap = { 1: { cls: 'icon-bank', short: 'BANK' }, 2: { cls: 'icon-coupa', short: 'COUPA' }, 3: { cls: 'icon-tax', short: 'TAX' } };
+    container.innerHTML = slots.map(s => {
+      const file = state['file' + s.n];
+      const size = file.size < 1024*1024 ? (file.size/1024).toFixed(1)+' KB' : (file.size/1024/1024).toFixed(1)+' MB';
+      const ddId = `dd-${s.n}`;
+      const ic   = iconMap[s.n];
+      return `<div class="detected-file-row">
+        <div class="file-type-icon ${ic.cls}">${ic.short}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:#1a202c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(file.name)}</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:1px;">${size}</div>
+        </div>
+        <div class="type-dropdown">
+          <button class="detected-type-badge ${s.cls} type-btn" onclick="toggleTypeDropdown('${ddId}')" title="Click to change type">${s.label}</button>
+          <div class="type-options" id="${ddId}">
+            <div class="type-option" onclick="changeDocType(${s.n},1,'${ddId}')"><span class="dot dot-bank"></span>Bank Document</div>
+            <div class="type-option" onclick="changeDocType(${s.n},2,'${ddId}')"><span class="dot dot-coupa"></span>Coupa Form</div>
+            <div class="type-option" onclick="changeDocType(${s.n},3,'${ddId}')"><span class="dot dot-tax"></span>Tax Form</div>
+          </div>
+        </div>
+        <button class="view-btn" onclick="openDocModal(${s.n})" title="Preview">🔍</button>
+        <button class="remove-btn" onclick="removeFile(${s.n})" title="Remove">×</button>
+      </div>`;
+    }).join('');
+  }
+
+  async function handleMultipleFiles(fileList) {
+    const files = Array.from(fileList).slice(0, 3);
+    if (!files.length) return;
+    document.getElementById('detectedFiles').innerHTML =
+      '<div class="detected-classifying">⏳ Detecting document types…</div>';
+    // Slot is always driven by the detected type — never reassigned to "whichever
+    // slot is free" — otherwise two Bank documents dropped together could put the
+    // second one in the Coupa slot and render it with a "Coupa Form" badge.
+    const typeLabel = { bank: 'Bank Document', coupa: 'Coupa Form', tax: 'Tax Form' };
+    const collisions = [];
+    for (const file of files) {
+      const text = await quickExtract(file);
+      const isPdf = file.type === 'application/pdf';
+      const type = detectDocType(text, { isPdf, filename: file.name });
+      const slot = type === 'coupa' ? 2 : type === 'tax' ? 3 : 1;
+      if (state['file' + slot]) collisions.push(typeLabel[type] || typeLabel.bank);
+      state['file' + slot] = file; // last-in-batch wins on a same-type collision
+    }
+    renderDetectedFiles();
+    refreshButton();
+    collisions.forEach(label =>
+      showToast(`Two files detected as ${label} — kept the latest one. Use the type dropdown to fix if needed.`));
+  }
+
+  function toggleTypeDropdown(id) {
+    // Close all other open dropdowns first
+    document.querySelectorAll('.type-options.open').forEach(el => { if (el.id !== id) el.classList.remove('open'); });
+    document.getElementById(id).classList.toggle('open');
+  }
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.type-dropdown'))
+      document.querySelectorAll('.type-options.open').forEach(el => el.classList.remove('open'));
+  });
+
+  function changeDocType(fromSlot, toSlot, ddId) {
+    if (fromSlot === toSlot) { document.getElementById(ddId).classList.remove('open'); return; }
+    const file = state['file' + fromSlot];
+    if (!file) return;
+    // Swap files if target slot already has a file
+    const existing = state['file' + toSlot];
+    state['file' + toSlot] = file;
+    state['file' + fromSlot] = existing || null;
+    document.getElementById(ddId).classList.remove('open');
+    renderDetectedFiles();
+    refreshButton();
+  }
+
+  // ── Upload wiring ────────────────────────────────────────────────
+  (() => {
+    const inp  = document.getElementById('fileMulti');
+    const drop = document.getElementById('dropAll');
+    drop.addEventListener('click', () => inp.click());
+    inp.addEventListener('change', e => { handleMultipleFiles(e.target.files); inp.value = ''; });
+    drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('drag-active'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('drag-active'));
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag-active'); handleMultipleFiles(e.dataTransfer.files); });
+  })();
+
+  function removeFile(n) {
+    state['file' + n] = null;
+    renderDetectedFiles();
+    refreshButton();
+    document.getElementById('results').classList.remove('visible');
+  }
+
+  function refreshButton() {
+    const btn   = document.getElementById('btnCompare');
+    const clear = document.getElementById('btnClear');
+    const ready  = state.file1 && state.file2;
+    const hasAny = state.file1 || state.file2 || state.file3;
+    btn.disabled = !ready;
+    btn.childNodes[1] && (btn.childNodes[1].textContent = ready ? ' Check for Mismatches →' : ' Upload Bank Document & Coupa Form to compare');
+    if (clear) clear.disabled = !hasAny;
+  }
+
+  function collapseUpload() {
+    const slotMeta = [
+      { n: 1, label: 'BANK',  cls: 'icon-bank'  },
+      { n: 2, label: 'COUPA', cls: 'icon-coupa' },
+      { n: 3, label: 'TAX',   cls: 'icon-tax'   },
+    ];
+    const bar = document.getElementById('uploadCollapsed');
+    const filled = slotMeta.filter(s => state['file' + s.n]);
+    bar.innerHTML = filled.map((s, i) => `
+      ${i > 0 ? '<div class="upload-collapsed-sep"></div>' : ''}
+      <div class="upload-collapsed-item">
+        <div class="upload-collapsed-icon ${s.cls}" onclick="openDocModal(${s.n})" title="Preview">${s.label}</div>
+        <span class="upload-collapsed-name">${escHtml(state['file' + s.n].name)}</span>
+      </div>
+    `).join('') + `<button class="upload-change-btn" onclick="expandUpload()">↺ New Validation</button>`;
+    document.getElementById('uploadArea').style.display = 'none';
+    bar.style.display = 'flex';
+    // Offset the results table's own sticky header by this bar's actual rendered
+    // height (varies if it wraps to two lines on a narrow window) so the two
+    // stack cleanly instead of overlapping.
+    document.documentElement.style.setProperty('--collapsed-bar-h', bar.offsetHeight + 'px');
+  }
+
+  function expandUpload() {
+    document.getElementById('uploadArea').style.display = '';
+    document.getElementById('uploadCollapsed').style.display = 'none';
+    document.documentElement.style.setProperty('--collapsed-bar-h', '0px');
+    document.getElementById('results').innerHTML = '';
+    document.getElementById('results').classList.remove('visible');
+  }
+
+  function clearAll() {
+    [1, 2, 3].forEach(n => { state['file' + n] = null; });
+    document.getElementById('detectedFiles').innerHTML = '';
+    document.getElementById('uploadArea').style.display = '';
+    document.getElementById('uploadCollapsed').style.display = 'none';
+    document.documentElement.style.setProperty('--collapsed-bar-h', '0px');
+    const results = document.getElementById('results');
+    results.innerHTML = '';
+    results.classList.remove('visible');
+    verifiedNotes = {};
+    lastVendorName = null;
+    historyViewKey = null;
+    clearDraft();
+    refreshButton();
+  }
+
+  // ── Image preprocessing for OCR ──────────────────────────────────
+  // Upscales small images, converts to grayscale, and stretches contrast
+  // so that Tesseract sees crisp black text on a white background.
+  function preprocessImageForOCR(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+
+      img.onload = () => {
+        try {
+          // Scale up so the longer dimension is at least 2400px.
+          // Tesseract accuracy drops sharply when text is smaller than ~20px tall;
+          // upscaling low-res scans to ~300 DPI equivalent fixes most failures.
+          const TARGET = 2400;
+          const maxDim = Math.max(img.width, img.height);
+          const scale  = maxDim < TARGET ? TARGET / maxDim : 1;
+          const w = Math.round(img.width  * scale);
+          const h = Math.round(img.height * scale);
+
+          const canvas = document.createElement('canvas');
+          canvas.width  = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled  = true;
+          ctx.imageSmoothingQuality  = 'high';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const d = imageData.data;
+          const n = w * h;
+
+          // Pass 1: convert to grayscale, collect histogram for contrast stretch
+          const gray = new Uint8Array(n);
+          let lo = 255, hi = 0;
+          for (let i = 0; i < n; i++) {
+            const g = Math.round(0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2]);
+            gray[i] = g;
+            if (g < lo) lo = g;
+            if (g > hi) hi = g;
+          }
+
+          // Clip the histogram at the 2nd and 98th percentile so a few stray
+          // dark/bright pixels don't crush the whole contrast range.
+          const hist = new Uint32Array(256);
+          for (let i = 0; i < n; i++) hist[gray[i]]++;
+          const cutoff = Math.round(n * 0.02);
+          let cumLo = 0;
+          for (lo = 0;   lo < 255 && (cumLo += hist[lo])   < cutoff; lo++);
+          let cumHi = 0;
+          for (hi = 255; hi > 0   && (cumHi += hist[hi])   < cutoff; hi--);
+          const range = (hi - lo) || 1;
+
+          // Pass 2: stretch contrast and write grayscale back as RGB
+          for (let i = 0; i < n; i++) {
+            const v = Math.min(255, Math.max(0, Math.round((gray[i] - lo) / range * 255)));
+            d[i*4] = d[i*4+1] = d[i*4+2] = v;
+            // alpha stays at 255
+          }
+
+          ctx.putImageData(imageData, 0, 0);
+          URL.revokeObjectURL(url);
+          resolve(canvas);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          reject(err);
+        }
+      };
+
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image failed to load')); };
+      img.src = url;
+    });
+  }
+
+  // ── Text extraction ──────────────────────────────────────────────
+  function setLoadingMsg(msg) {
+    const el = document.getElementById('results');
+    const spin = el.querySelector('.spinner');
+    const txt  = el.querySelector('.loading-msg');
+    if (txt) txt.textContent = msg;
+  }
+
+  async function extractText(file) {
+    if (file.type === 'application/pdf') {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument(buf).promise;
+      let out = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const items = content.items;
+        const lines = {};
+        items.forEach(item => {
+          if (!item.str) return;
+          // Coupa Supplier Portal embeds a dark-blue "HIDE" / "SHOW" toggle button
+          // as a separate text run next to masked banking fields. Drop it here so it
+          // never reaches any extractor.
+          if (/^(hide|show)$/i.test(item.str.trim())) return;
+          const y = Math.round(item.transform[5]);
+          if (!lines[y]) lines[y] = [];
+          const w = item.width || item.str.length * Math.abs(item.transform[0]) * 0.55;
+          lines[y].push({ str: item.str, x: item.transform[4], w });
+        });
+        const sortedY = Object.keys(lines).map(Number).sort((a, b) => b - a);
+        sortedY.forEach(y => {
+          const row = lines[y].slice().sort((a, b) => a.x - b.x);
+          let rowStr = '';
+          for (let i = 0; i < row.length; i++) {
+            if (i === 0) {
+              rowStr += row[i].str;
+            } else {
+              const gap = row[i].x - (row[i-1].x + row[i-1].w);
+              // A gap wider than ~20 pts is a table-column boundary — use a
+              // newline so the label and its value stay on separate lines and
+              // never get merged into "Account Number/IBAN GB08HBUK…".
+              rowStr += (gap > 20 ? '\n' : ' ') + row[i].str;
+            }
+          }
+          out += rowStr + '\n';
+        });
+        out += '\n';
+
+        // Also pull values from fillable form fields (AcroForm widgets)
+        // Fillable PDFs like Coupa supplier forms store typed values in annotations,
+        // not in getTextContent(), so they'd be invisible to the extractor without this.
+        try {
+          const annotations = await page.getAnnotations();
+          const filled = annotations.filter(a =>
+            a.subtype === 'Widget' && a.fieldName &&
+            a.fieldValue !== undefined && a.fieldValue !== null &&
+            String(a.fieldValue).trim() !== ''
+          );
+          // Sort top-to-bottom, left-to-right by on-page position (rect = [x1,y1,x2,y2],
+          // PDF y grows upward) rather than trusting getAnnotations()'s array order.
+          // Forms like the IRS W-9 store each EIN digit in its own box field — if those
+          // come back out of visual order, concatenating their values produces a scrambled
+          // number (e.g. digits transposed) that never matches the real EIN.
+          filled.sort((a, b) => (b.rect ? b.rect[1] : 0) - (a.rect ? a.rect[1] : 0) || (a.rect ? a.rect[0] : 0) - (b.rect ? b.rect[0] : 0));
+          if (filled.length) {
+            filled.forEach(a => { out += `${a.fieldName}: ${a.fieldValue}\n`; });
+            out += '\n';
+          }
+        } catch(e) {}
+      }
+
+      // If the PDF yielded very little readable text it is almost certainly using
+      // embedded fonts without a Unicode map (common with bank-generated PDFs such as
+      // Commonwealth Bank of Australia confirmation letters). Fall back to rendering
+      // each page as a high-resolution canvas and running Tesseract OCR on it —
+      // exactly the same path used for uploaded image files.
+      const meaningful = out.replace(/\s/g, '').length;
+      if (meaningful < 80) {
+        setLoadingMsg(`PDF text layer is unreadable — running OCR on ${file.name}…`);
+        let ocrOut = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page    = await pdf.getPage(i);
+          const vp      = page.getViewport({ scale: 2.5 }); // 2.5× for sharper OCR
+          const canvas  = document.createElement('canvas');
+          canvas.width  = vp.width;
+          canvas.height = vp.height;
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+          const result  = await Tesseract.recognize(canvas, 'eng', {
+            logger: m => {
+              if (m.status === 'recognizing text')
+                setLoadingMsg(`OCR on ${file.name} page ${i}/${pdf.numPages}: ${Math.round(m.progress * 100)}%`);
+            }
+          });
+          ocrOut += result.data.text + '\n\n';
+        }
+        return `[IMAGE:PDF-OCR]\n${ocrOut}`;
+      }
+
+      return out;
+    } else if (file.name.toLowerCase().endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      setLoadingMsg(`Reading Word document: ${file.name}…`);
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      return result.value || '';
+    } else if (file.type.startsWith('image/')) {
+      setLoadingMsg(`Preprocessing ${file.name} for clearer OCR…`);
+      let ocrSource = file;
+      try { ocrSource = await preprocessImageForOCR(file); } catch(e) {}
+      setLoadingMsg(`Running OCR on ${file.name}… this may take a few seconds`);
+      const result = await Tesseract.recognize(ocrSource, 'eng', {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            setLoadingMsg(`OCR on ${file.name}: ${Math.round(m.progress * 100)}%`);
+          }
+        }
+      });
+      return result.data.text;
+    } else {
+      return `[UNSUPPORTED: ${file.name}]\nPlease upload a PDF or image file (PNG, JPG, JPEG).`;
+    }
+  }
+
+  // ── Field definitions & patterns ────────────────────────────────
+  // extract() returns { value, detectedAs } or null
+  const FIELD_DEFS = [
+    {
+      key: 'account_name', group: 'Banking Information',
+      label: 'Account Holder / Beneficiary Name',
+      priority: 'high',
+      enableValueSearch: true,
+      hintKeywords: [/beneficiary\s+account\s+name/i, /beneficiary\s+name/i, /account\s+holder\s+name/i, /account\s+holder/i, /name\s+on\s+bank\s+account/i, /account\s+name/i],
+      extract(text) {
+        // Stop at end-of-line OR before another field keyword (handles same-line layouts).
+        // Using (.+?) with $ (multiline) prevents crossing into the next line.
+        // The negative-keyword lookahead handles cases where fields share one line.
+        // "address" is in this stop list too — a combined table label like "Beneficiary
+        // Name / Address:" must never let the same-line capture below run past "Name"
+        // into "/ Address:" and return that as if it were the account holder's name.
+        const STOP = /\s*(?:account\s+(?:number|no\.?)|routing\b|swift\b|sort\s+code\b|bsb\b|iban\b|\/?\s*&?\s*address\b)/i;
+        const stopStr = STOP.source;
+        const patterns = [
+          // Combined cell label "Beneficiary Name / Address:" (or "Account Holder Name /
+          // Address:") — the value isn't on this line at all, it's the line right below,
+          // in the same table cell (the street/city/postal lines follow after it).
+          { as: 'Beneficiary Name / Address (value on next line)', re: /(?:beneficiary\s+name|account\s+holder(?:\s+name)?)\s*[\/&]\s*address[:\s]*\n\s*(.+)/i },
+          { as: 'Beneficiary Account Name', re: new RegExp(`beneficiary\\s+account\\s+name[:\\s]+(.+?)(?=${stopStr}|\\s*$)`, 'mi') },
+          { as: 'Beneficiary Name',         re: new RegExp(`beneficiary\\s+name[:\\s]+(.+?)(?=${stopStr}|\\s*$)`, 'mi') },
+          { as: 'Account Holder Name',      re: new RegExp(`account\\s+holder\\s+name[:\\s]+(.+?)(?=${stopStr}|\\s*$)`, 'mi') },
+          { as: 'Account Holder',           re: new RegExp(`account\\s+holder[:\\s]+(.+?)(?=${stopStr}|\\s*$)`, 'mi') },
+          { as: 'Name on Bank Account',     re: new RegExp(`name\\s+on\\s+bank\\s+account[:\\s]+(.+?)(?=${stopStr}|\\s*$)`, 'mi') },
+          // "Account Owner: AI Hub GmbH" — used by Qonto and similar fintech bank statements
+          // Must come before "Account Name" because "Account name: Hauptkonto" is a sub-account
+          // label, not the beneficial owner.
+          { as: 'Account Owner',            re: new RegExp(`account\\s+owner[:\\s]+(.+?)(?=${stopStr}|\\s*$)`, 'mi') },
+          // "Account title" — label used by Commonwealth Bank of Australia confirmation letters
+          { as: 'Account Title',            re: new RegExp(`account\\s+title[:\\s]+(.+?)(?=${stopStr}|\\s*$)`, 'mi') },
+          { as: 'Account Name',             re: new RegExp(`account\\s+name[:\\s]+(.+?)(?=${stopStr}|\\s*$)`, 'mi') },
+          // German bank confirmation letter: "corporate customer\nWIN-Verlag GmbH & Co.KG\nholds the following account"
+          { as: 'Account holder (German letter)', re: /(?:corporate\s+customer|account\s+of)\s*\n\s*(.+?)\s*\n\s*holds\b/im },
+        ];
+        // Single-word banking terms (SWIFT badge, BIC label, etc.) are never a valid
+        // account holder name — skip them so the cross-check can find the real name.
+        const BANKING_TAG = /^(swift|bic|iban|sepa|wire|ach|transfer|routing|sort|bsb)$/i;
+        for (const { as, re } of patterns) {
+          const m = text.match(re);
+          if (m && m[1]) {
+            const val = m[1].trim().replace(/\s+/g, ' ');
+            if (val.length >= 2 && !BANKING_TAG.test(val)) return { value: val, detectedAs: as };
+          }
+        }
+        return null;
+      }
+    },
+    {
+      key: 'iban', group: 'Banking Information',
+      label: 'IBAN',
+      priority: 'high',
+      hintKeywords: [/international\s+bank\s+account\s+number/i, /iban/i],
+      extract(text) {
+        // Known IBAN lengths per country — used to truncate if the extractor
+        // accidentally grabs a trailing SWIFT/BIC code (e.g. DE22 + QNTODEB2XXX).
+        const IBAN_LEN = { AL:28,AD:24,AT:20,AZ:28,BH:22,BY:28,BE:16,BA:20,BR:29,
+          BG:22,CR:22,HR:21,CY:28,CZ:24,DK:18,DO:28,EG:29,SV:28,EE:20,FK:18,
+          FO:18,FI:18,FR:27,GE:22,DE:22,GI:23,GR:27,GL:18,GT:28,HU:28,IS:26,
+          IQ:23,IE:22,IL:23,IT:27,JO:30,KZ:20,XK:20,KW:30,LV:21,LB:28,LY:25,
+          LI:21,LT:20,LU:20,MT:31,MR:27,MU:30,MD:24,MC:27,MN:20,ME:22,NL:18,
+          NI:32,MK:19,NO:15,PK:24,PS:29,PL:28,PT:25,QA:29,RO:24,LC:32,SM:27,
+          ST:25,SA:24,RS:22,SC:31,SK:24,SI:19,ES:24,SD:18,SE:24,CH:21,TL:23,
+          TN:24,TR:26,UA:29,AE:23,GB:22,VA:22,VG:24,YE:30 };
+
+        function trimToCountryLen(raw) {
+          const cc = raw.substring(0, 2).toUpperCase();
+          const len = IBAN_LEN[cc];
+          return len ? raw.substring(0, len) : raw;
+        }
+
+        // Use [ \t:#]* (no newlines) so the label match stays on its own line and
+        // never accidentally captures the next line's BIC/SWIFT as part of the IBAN.
+        const LABEL_RE = /(?:international\s+bank\s+account\s+number|account\s*(?:number|no\.?)\s*[\/\-]\s*iban|iban(?:\s+(?:number|no\.?))?)[: \t#]*([^\n]+)/i;
+        const labelM = text.match(LABEL_RE);
+        if (labelM) {
+          const line = labelM[1].trim();
+          // 1st attempt: word-boundary IBAN (handles "IBAN NUMBER GB08HBUK…")
+          const wb = line.match(/\b([A-Z]{2}\d{2}(?:\s*[A-Z0-9]{1,4}){3,})\b/i);
+          if (wb) {
+            const clean = wb[1].replace(/\b(hide|show)\b/gi, '');
+            const val = trimToCountryLen(clean.replace(/\s/g, '').toUpperCase());
+            if (val.length >= 15 && val.length <= 34) return { value: val, detectedAs: 'IBAN' };
+          }
+          // 2nd attempt: no word boundary (handles "NUMBERGB08HBUK…" with no space)
+          const nb = line.match(/([A-Z]{2}\d{2}[A-Z0-9]{11,30})/i);
+          if (nb) {
+            const val = trimToCountryLen(nb[1].replace(/hide|show/gi, '').toUpperCase());
+            if (val.length >= 15 && val.length <= 34) return { value: val, detectedAs: 'IBAN' };
+          }
+        }
+        // Bare fallback — use [ ]? (space only, NOT \s) so the pattern never
+        // crosses a newline and merges the IBAN with a BIC on the next line.
+        const ibanFmt = text.match(/\b([A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{1,4}){3,})\b/);
+        if (ibanFmt) {
+          const clean = ibanFmt[1].replace(/\b(hide|show)\b/gi, '');
+          const val = trimToCountryLen(clean.replace(/\s/g, '').toUpperCase());
+          if (val.length >= 15 && val.length <= 34) return { value: val, detectedAs: 'IBAN' };
+        }
+        return null;
+      }
+    },
+    {
+      key: 'account_number', group: 'Banking Information',
+      label: 'Account Number',
+      priority: 'high',
+      enableValueSearch: true,
+      hintKeywords: [/account\s*(?:number|no\.?|#)/i, /acct/i],
+      extract(text) {
+        // Handles "Account Number:", "Account Number/IBAN:" (Coupa), and spaced formats
+        // like "1026 8505" (CBA Australia) or "2023 7316 2909" (12-digit US accounts).
+        // Max raised to 20 digits so long account numbers (e.g. 202373162909) are fully
+        // captured — previous 10-digit cap caused \b to fail mid-number and return null.
+        const m = text.match(/(?:account\s*(?:number|no\.?|#)(?:\s*[\/\-]\s*iban)?|acct\s*(?:number|no\.?|#)?)[:\s#.]*(?:[-–•*]\s*)?(\d{4,20}(?:[\s]\d{3,20})?)\b/i);
+        if (!m) return null;
+        const val = m[1].replace(/\s/g, '');
+        return val.length >= 5 ? { value: val, detectedAs: 'Account Number' } : null;
+      }
+    },
+    {
+      key: 'routing', group: 'Banking Information',
+      label: 'Routing Number',
+      priority: 'high',
+      enableValueSearch: true,
+      hintKeywords: [/beneficiary\s+bank\s+routing/i, /ach\s+routing/i, /routing\s*(?:number|no\.?)?/i, /aba/i, /transit/i],
+      extract(text) {
+        // [:\s#.]* already spans a newline, so "Routing No.\n021052053" (label on
+        // its own line, underlined, number directly below) matches the same as a
+        // same-line label. Digits may also come grouped with a single space or
+        // dash (e.g. "021 052 053") — match that shape too, then strip separators.
+        const DIGITS = '\\d(?:[ -]?\\d){8}';
+        const patterns = [
+          { as: 'Beneficiary Bank Routing Number', re: new RegExp(`beneficiary\\s+bank\\s+routing(?:\\s+number)?[:\\s#.]*(${DIGITS})\\b`, 'i') },
+          { as: 'ACH Routing Number',               re: new RegExp(`ach\\s+routing(?:\\s+number)?[:\\s#.]*(${DIGITS})\\b`, 'i') },
+          { as: 'Routing Number',                   re: new RegExp(`routing\\s*(?:number|no\\.?|#)?[:\\s#.]*(?:[-–•*]\\s*)?(${DIGITS})\\b`, 'i') },
+          { as: 'ABA / Routing Number',             re: new RegExp(`aba(?:\\s+(?:routing\\s+)?number|\\s+routing)?[:\\s#.]*(${DIGITS})\\b`, 'i') },
+          { as: 'Transit Number',                   re: new RegExp(`transit(?:\\s+number)?[:\\s#.]*(${DIGITS})\\b`, 'i') },
+        ];
+        for (const { as, re } of patterns) {
+          const m = text.match(re);
+          if (m) return { value: m[1].replace(/[\s-]/g, ''), detectedAs: as };
+        }
+        return null;
+      }
+    },
+    {
+      key: 'swift', group: 'Banking Information',
+      label: 'Swift Code / BIC',
+      priority: 'high',
+      hintKeywords: [/bank\s+identifier\s+code/i, /swift/i, /bic/i],
+      extract(text) {
+        // Matches label variants including "SWIFT Code/BIC/Sort Code" (Okta/Coupa supplier form).
+        // (?!\s+transfer\b) prevents "SWIFT transfer: …" from matching — "TRANSFER" is 8 uppercase
+        // letters that accidentally fit the BIC format (TRAN+SF+ER) but is not a real BIC code.
+        // (?!\s*:) after the captured value rejects cases where the "BIC" is followed by a colon
+        // (meaning the matched word is actually a label, e.g. "transfer: QNTODEB2XXX").
+        const LABEL = /(?:bank\s+identifier\s+code|swift(?!\s+transfer\b)(?:\s*code)?\s*\/\s*bic(?:\s*\/\s*sort\s*code)?|swift(?!\s+transfer\b)(?:\s*[\/\-]\s*bic)?(?:\s+code)?(?:\s*\([^)]*\))?|bic(?:\s*[\/\-]\s*swift)?(?:\s+code)?(?:\s*\([^)]*\))?)[:\s]+(?:[-–•*]\s*)?([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b(?!\s*:)/i;
+        const labeled = text.match(LABEL);
+        if (labeled) return { value: labeled[1].toUpperCase(), detectedAs: 'Swift / BIC Code' };
+        // Coupa forms sometimes use a literal "XXX" placeholder in the SWIFT/BIC field when no
+        // branch code applies — the full-BIC pattern above requires 8+ chars so it never matches
+        // "XXX" alone. Capture it separately so the comparison rule can auto-match on it.
+        const placeholderM = text.match(/(?:bank\s+identifier\s+code|swift(?:\s*code)?(?:\s*[\/\-]\s*bic)?(?:\s+code)?|bic(?:\s*[\/\-]\s*swift)?(?:\s+code)?)[:\s]+(?:[-–•*]\s*)?(XXX)\b/i);
+        if (placeholderM) return { value: 'XXX', detectedAs: 'Swift / BIC Code (placeholder)' };
+        const fmt = text.match(/\b([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}[A-Z0-9]{3})\b/);
+        return fmt ? { value: fmt[1].toUpperCase(), detectedAs: 'Swift / BIC Code' } : null;
+      }
+    },
+    {
+      key: 'sort_code', group: 'Banking Information',
+      label: 'Sort Code',
+      priority: 'high',
+      hintKeywords: [/sort\s*code/i],
+      extract(text) {
+        const m = text.match(/sort\s*(?:code|no\.?)?[:\s]+(?:[-–•*]\s*)?(\d{2}[-\s]?\d{2}[-\s]?\d{2})\b/i)
+                || text.match(/\b(\d{2}-\d{2}-\d{2})\b/);
+        return m ? { value: m[1].replace(/\s/g, ''), detectedAs: 'Sort Code' } : null;
+      }
+    },
+    {
+      key: 'bsb', group: 'Banking Information',
+      label: 'BSB Number',
+      priority: 'high',
+      hintKeywords: [/bsb(?:\s+(?:number|no\.?|code))?/i],
+      extract(text) {
+        const m = text.match(/bsb(?:\s+(?:number|no\.?|code))?[:\s]+(?:[-–•*]\s*)?(\d{3}[-\s]?\d{3})\b/i)
+                || text.match(/\b(\d{3}-\d{3})\b/);
+        return m ? { value: m[1].replace(/\s/g, ''), detectedAs: 'BSB Number' } : null;
+      }
+    },
+    {
+      key: 'bank_name', group: 'Banking Information',
+      label: 'Bank Name',
+      priority: 'high',
+      enableValueSearch: true,
+      hintKeywords: [/beneficiary\s+bank\s+name/i, /name\s+of\s+(?:the\s+)?bank/i, /bank\s+name/i],
+      extract(text) {
+        // \b...\b guards are required here — without them "account|routing|swift|sort|bsb|iban"
+        // match as bare substrings, e.g. "CITIBANK" contains "IBAN" (C-IT-IBAN-K), which truncated
+        // the captured name to "Cit" before this fix.
+        const STOP = /\s*\b(?:bank\s+(?:address|country|postal|zip|code|routing|account)|account|routing|swift|sort|bsb|iban)\b/i;
+        const stop = STOP.source;
+        // Single-word banking field labels that are never a valid bank name.
+        // "Name of Bank\naccount" → "account" is a sub-label, not the bank name.
+        const LABEL_WORDS = /^(account|number|no|holder|name|title|code|address|country|type|owner|beneficiary|remit|iban|swift|bic|bsb|routing|sort)$/i;
+        const patterns = [
+          // "Bank Name" must come before "Name of Bank" so "Bank Name: COMMONWEALTH BANK OF AUSTRALIA"
+          // is matched directly rather than letting "Name of Bank account: …" fire first and
+          // capture just "account" as the value.
+          { as: 'Beneficiary Bank Name', re: new RegExp(`beneficiary\\s+bank\\s+name[:\\s]+(.+?)(?=${stop}|\\s*$)`, 'mi') },
+          { as: 'Bank Name',             re: new RegExp(`bank\\s+name[:\\s]+(.+?)(?=${stop}|\\s*$)`, 'mi') },
+          { as: 'Name of Bank',          re: new RegExp(`name\\s+of\\s+(?:the\\s+)?bank[:\\s]+(.+?)(?=${stop}|\\s*$)`, 'mi') },
+          { as: 'Financial Institution', re: new RegExp(`financial\\s+institution[:\\s]+(.+?)(?=${stop}|\\s*$)`, 'mi') },
+          // SSI / settlement letters: "…account in the name of ACME LLC held with JPMORGAN CHASE BANK, N.A."
+          { as: 'Bank name (held with)', re: /\bheld\s+(?:by|with)\s+([A-Z][A-Za-z&.]*(?:\s+[A-Z][A-Za-z&.]*){0,7}(?:,\s*(?:N\.?A\.?|Ltd\.?|Limited|PLC|FSB|Corp|Inc))?)/m },
+        ];
+        for (const { as, re } of patterns) {
+          const m = text.match(re);
+          if (m && m[1]) {
+            const val = m[1].trim().replace(/\s+/g, ' ');
+            if (val.length >= 2 && val.length <= 100 && !LABEL_WORDS.test(val))
+              return { value: val, detectedAs: as };
+          }
+        }
+        // Unlabeled detection: find "Bank of X" or "X Bank [suffix]" in the document text.
+        // Negative lookahead prevents matching field labels like "Bank Address:", "Bank Account:", etc.
+        // \b...\b required — without it "iban" as a bare substring matches inside real bank
+        // names like "CITIBANK" (C-IT-IBAN-K) and would wrongly reject a correct detection.
+        const FIELD_WORDS = /\b(?:account|number|no|routing|address|code|transfer|branch|detail|country|state|sort|bsb|iban|swift|postal|zip|wire)\b/i;
+        // Pronouns/generic words that appear in marketing slogans but never in a real bank name.
+        // "Your Business. Your Family. Your Bank." — "Your" is the tell.
+        const SLOGAN_WORDS = /\b(your|our|we|us|my|the|and|for|with|better|best|great|local|community|personal|business|family|future|trust|people|member|neighbor)\b/i;
+        const unlabeled = [
+          // "Commonwealth Bank of Australia", "National Bank of Canada", "Bank of America"
+          // Optional capitalized words before "Bank of X" capture "Commonwealth Bank of Australia"
+          /\b((?:[A-Z][A-Za-z&]*\s+)*Bank\s+of\s+[A-Z][A-Za-z\s&]{2,35}?)(?=\s*[\n,]|\s+(?:N\.?A\.?|NA|Ltd|PLC|Corp|Inc)|\s*$)/m,
+          // "JPMorgan Chase Bank N.A.", "Wells Fargo Bank, N.A.", "ANZ Bank"
+          // Each word before "Bank" must start with a capital — prevents "LLC held with BANK" false matches.
+          // No /i flag: case-insensitivity would let [A-Z] match lowercase filler words too,
+          // so the match could run backward through an entire lowercase sentence (e.g. "reference
+          // to your banking relationship with Schaumburg Bank") instead of stopping at the real name.
+          /\b([A-Z][A-Za-z&.]*(?:\s+[A-Z][A-Za-z&.]*){0,6}\s+Bank(?:\s+of\s+[A-Z][A-Za-z\s&]{2,25})?(?:\s+(?:N\.?A\.?|NA|Ltd|Limited|PLC|FSB|Corp|Inc))?)\b(?!\s*:)(?!\s+(?:[Aa]ccount|[Nn]umber|[Nn]o\b|[Rr]outing|[Aa]ddress|[Cc]ode|[Bb]ranch|[Dd]etail|[Cc]ountry|[Ss]ort|[Bb][Ss][Bb]|[Ii][Bb][Aa][Nn]|[Ss]wift|[Pp]ostal|[Zz]ip))/m,
+          // German banking institutions: "Kreissparkasse München Starnberg Ebersberg",
+          // "Stadtsparkasse München", "Volksbank Raiffeisenbank Bayern Mitte"
+          // These names don't contain "Bank" as a standalone word, so the patterns above miss them.
+          /\b(\S*sparkasse(?:[ \t]+\S+){1,6})/im,
+          /\b(\S*volksbank(?:[ \t]+\S+){0,6})/im,
+          /\b(\S*raiffeisenbank(?:[ \t]+\S+){0,6})/im,
+        ];
+        for (const re of unlabeled) {
+          const m = text.match(re);
+          if (m && m[1]) {
+            const val = m[1].trim().replace(/\s+/g, ' ');
+            if (val.length >= 4 && val.length <= 100 && !FIELD_WORDS.test(val) && !SLOGAN_WORDS.test(val)) {
+              return { value: val, detectedAs: 'Bank name (detected from document)' };
+            }
+          }
+        }
+        return null;
+      }
+    },
+    {
+      key: 'bank_address', group: 'Banking Information',
+      label: 'Bank Address',
+      priority: 'medium',
+      enableValueSearch: true,
+      hintKeywords: [/beneficiary\s+bank\s+address/i, /bank\s+address/i, /address\s+of\s+(?:the\s+)?bank/i, /bank\s+domiciliation/i],
+      extract(text) {
+        const patterns = [
+          { as: 'Beneficiary Bank Address', re: /beneficiary\s+bank\s+address[:\s]+(.+?)(?=\s*$)/mi },
+          { as: 'Bank Address',             re: /bank\s+address[:\s]+(.+?)(?=\s*$)/mi },
+          { as: 'Address of Bank',          re: /address\s+of\s+(?:the\s+)?bank[:\s]+(.+?)(?=\s*$)/mi },
+          // "Bank Domiciliation: Company, Street, PostalCode City" — used by Qonto and
+          // similar fintech banks. Extract the street (component containing a building number
+          // but NOT starting with digits like a postal code).
+          { as: 'Bank Domiciliation',       re: /bank\s+domiciliation[:\s]+(.+?)(?=\s*$)/mi },
+        ];
+        for (const { as, re } of patterns) {
+          const m = text.match(re);
+          if (m && m[1]) {
+            const raw = m[1].trim().replace(/\s+/g, ' ');
+            if (raw.length < 2) continue;
+            // For domiciliation lines: "Company, Street, PostalCode City" — pick the
+            // comma-separated part that has a building number but isn't the postal+city chunk.
+            if (as === 'Bank Domiciliation') {
+              const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+              const street = parts.find(p => /\d/.test(p) && !/^\d{4,6}\s/.test(p));
+              if (street) return { value: street, detectedAs: 'Bank Domiciliation (street)' };
+              // Fallback: return the last non-empty part before the postal+city component
+              if (parts.length >= 2) return { value: parts[parts.length - 2], detectedAs: 'Bank Domiciliation (street)' };
+            }
+            // If it's a full one-line address, return only the street portion
+            if (looksLikeFullAddress(raw)) {
+              const parsed = parseAddressComponents(raw);
+              if (parsed && parsed.street) {
+                return { value: parsed.street, detectedAs: as + ' (street extracted from full address)' };
+              }
+            }
+            return { value: raw, detectedAs: as };
+          }
+        }
+        // Fallback: banks often print their own address in the page letterhead
+        // (top of the document) or a footer block, with no "Bank Address:" label
+        // anywhere — e.g. a German bank letter's sender block:
+        //   Kurt-Schumacher-Str. 19
+        //   30159 Hannover
+        // Scan the first and last ~15 lines for a street line immediately followed
+        // by a "postal-code city" line (German/EU order). Requiring an actual
+        // street-type word on the candidate line — not just "has a digit" — keeps
+        // this from grabbing a nearby recipient/addressee block instead (e.g. a
+        // "Re: Vendor Inc. / 311 W Walton / Chicago IL 60610" line has digits too
+        // but no street-suffix word, so it's correctly skipped).
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        const GERMAN_POSTAL_CITY = /^\d{4,6}\s+[A-Za-zÀ-ÿ]/;
+        const STREET_SUFFIX = /\b(straße|strasse|str\.?|weg|allee|platz|ring|gasse|rd\.?|road|st\.?|street|ave\.?|avenue|dr\.?|drive|ln\.?|lane|blvd\.?|boulevard|ct\.?|court|pl\.?|place|hwy\.?|highway)\b/i;
+        for (const zone of [lines.slice(0, 15), lines.slice(-15)]) {
+          for (let i = 0; i < zone.length - 1; i++) {
+            const line = zone[i], next = zone[i + 1];
+            if (!line || line.length > 60 || !/\d/.test(line)) continue;
+            if (!STREET_SUFFIX.test(line)) continue;
+            if (GERMAN_POSTAL_CITY.test(next)) {
+              return { value: line, detectedAs: 'Bank address (from letterhead/footer)' };
+            }
+          }
+        }
+        return null;
+      }
+    },
+    {
+      key: 'bank_country', group: 'Banking Information',
+      label: 'Bank Country',
+      priority: 'medium',
+      hintKeywords: [/beneficiary\s+bank\s+country/i, /bank\s+country/i, /country\s+of\s+(?:the\s+)?bank/i],
+      extract(text) {
+        const patterns = [
+          { as: 'Beneficiary Bank Country', re: /beneficiary\s+bank\s+country[:\s]+(.+?)(?=\s*$)/mi },
+          { as: 'Bank Country',             re: /bank\s+country[:\s]+(.+?)(?=\s*$)/mi },
+          { as: 'Country of Bank',          re: /country\s+of\s+(?:the\s+)?bank[:\s]+(.+?)(?=\s*$)/mi },
+        ];
+        for (const { as, re } of patterns) {
+          const m = text.match(re);
+          if (m && m[1]) {
+            const val = m[1].trim().replace(/\s+/g, ' ');
+            if (val.length >= 2 && val.length <= 60) return { value: val, detectedAs: as };
+          }
+        }
+        // Fallback: infer country from the bank address in the same document
+        // Try labeled bank address line first
+        const addrM = text.match(/(?:beneficiary\s+bank\s+address|bank\s+address|address)[:\s]+(.+?)(?=\s*$)/mi);
+        if (addrM && addrM[1]) {
+          const inferred = inferCountryFromAddress(addrM[1].trim());
+          if (inferred) return { value: inferred, detectedAs: 'Inferred from bank address' };
+        }
+        // Deep scan: infer from full document text (handles incomplete / unlabeled addresses)
+        const fullScan = inferCountryFromAddress(text);
+        if (fullScan) return { value: fullScan, detectedAs: 'Inferred from document content' };
+        return null;
+      }
+    },
+    {
+      key: 'bank_postal', group: 'Banking Information',
+      label: 'Bank Postal Code',
+      priority: 'medium',
+      enableValueSearch: true,
+      hintKeywords: [/bank\s+postal/i, /postal\s+code/i, /zip\s*code/i, /postcode/i, /bank\s+domiciliation/i],
+      extract(text) {
+        const patterns = [
+          { as: 'Bank Postal Code', re: /bank\s+postal(?:\s+code)?[:\s]+(\S+)/i },
+          { as: 'Postal Code',      re: /postal\s+code[:\s]+(\S+)/i },
+          { as: 'ZIP Code',         re: /zip\s*(?:code)?[:\s]+(\d{5}(?:-\d{4})?)/i },
+          { as: 'Postcode',         re: /postcode[:\s]+(\S+)/i },
+        ];
+        for (const { as, re } of patterns) {
+          const m = text.match(re);
+          if (m && m[1]) return { value: m[1].trim(), detectedAs: as };
+        }
+
+        // Fallback: parse postal from any labeled bank address line.
+        // Covers "Bank Address:", "Bank Domiciliation:" etc.
+        // Uses three strategies because multi-line addresses and European/US formats differ.
+        const ADDR_LABELS = /(?:beneficiary\s+bank\s+address|bank\s+(?:address|domiciliation)|domiciliation)[:\s]+(.+?)(?=\s*$)/mi;
+        const addrM = text.match(ADDR_LABELS);
+        if (addrM && addrM[1]) {
+          const line = addrM[1].trim();
+          // Strategy 1: postal at end of string (e.g. "383 Madison Ave NY 10179")
+          const parsed = parseAddressComponents(line);
+          if (parsed && parsed.postal) return { value: parsed.postal, detectedAs: 'Postal parsed from address line' };
+          // Strategy 2: "PostalCode City" mid-line (e.g. "Warschauer Platz 11-13, 10245 Berlin")
+          // Require a comma or 2+ spaces before the digits to avoid matching street numbers at
+          // position 0 (e.g. "1120 Avenue of the Americas" would wrongly produce "1120").
+          const mid = line.match(/(?:,\s*|\s{2,})(\d{4,6})\s+[A-Z][a-z]/);
+          if (mid) return { value: mid[1], detectedAs: 'Postal from bank address line' };
+          // Strategy 3: multi-line address block — grab the line immediately after the captured
+          // first line (e.g. "Bank Address: 1120 Avenue of the Americas\nNew York, NY 10036").
+          const addrEnd = addrM.index + addrM[0].length;
+          const nextLine = text.slice(addrEnd).match(/^[ \t]*(\S[^\n]*)/m);
+          if (nextLine) {
+            const parsed2 = parseAddressComponents(nextLine[1].trim());
+            if (parsed2 && parsed2.postal) return { value: parsed2.postal, detectedAs: 'Postal from bank address (line 2)' };
+            // US ZIP in City, State ZIP format on the second line
+            const usZip = nextLine[1].match(/\b(\d{5}(?:-\d{4})?)\b/);
+            if (usZip) return { value: usZip[1], detectedAs: 'ZIP from bank address (line 2)' };
+          }
+        }
+        return null;
+      }
+    },
+  ];
+
+  // ── Address parser ───────────────────────────────────────────────
+  // Splits "96 King William St, Adelaide SA 5000" into { street, city, state, postal }
+  function parseAddressComponents(address) {
+    if (!address) return null;
+    const a = address.trim();
+
+    // PO Box without city/state — the trailing number is the box number, not a postal code
+    if (/^p\.?o\.?\s*box\b/i.test(a) && !a.includes(',')) return null;
+
+    // Postal: trailing digits (4-6) or UK-style alphanumeric (e.g. SW1A 2AA)
+    const postalRe = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}|\d{4,6}(?:-\d{4})?)\s*$/i;
+    const postalM  = a.match(postalRe);
+    if (!postalM) return null; // doesn't look like a parseable full address
+
+    const postal      = postalM[1].replace(/\s+/g, '');
+    const withoutPost = a.slice(0, postalM.index).trim().replace(/,?\s*$/, '').trim();
+
+    // State: trailing 2-3 uppercase letters before postal (common in AU, US, CA)
+    const stateM      = withoutPost.match(/\b([A-Z]{2,3})\s*$/);
+    const state       = stateM ? stateM[1] : null;
+    const withoutState = stateM
+      ? withoutPost.slice(0, stateM.index).trim().replace(/,?\s*$/, '').trim()
+      : withoutPost;
+
+    // Guard: if no state found and no comma in withoutPost, the trailing number
+    // is likely a suite/building number, not a real postal code — reject it.
+    if (!state && !withoutPost.includes(',')) return null;
+
+    // Street and city split by last comma
+    const lastComma = withoutState.lastIndexOf(',');
+    const street = lastComma >= 0 ? withoutState.slice(0, lastComma).trim() : withoutState;
+    const city   = lastComma >= 0 ? withoutState.slice(lastComma + 1).trim() : null;
+
+    return { street, city, state, postal };
+  }
+
+  function looksLikeFullAddress(addr) {
+    // "PO Box 1234" — the trailing number is a box number, not a postal code.
+    // Only treat it as a full parseable address if it also has a city/state (comma present).
+    if (/^p\.?o\.?\s*box\b/i.test(addr) && !addr.includes(',')) return false;
+    return /\b(\d{4,6}|[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\s*$/i.test(addr);
+  }
+
+  function inferCountryFromAddress(addr) {
+    if (!addr) return null;
+    const AU_STATES = /\b(NSW|VIC|QLD|SA|WA|TAS|ACT|NT)\b/;
+    const US_STATES = /\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b/;
+    const CA_STATES = /\b(AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)\b/;
+    const UK_POST   = /\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/i;
+    const CA_POST   = /\b[A-Z]\d[A-Z]\s*\d[A-Z]\d\b/i;
+
+    // IBAN country-code prefix — highest priority, very reliable signal.
+    // Checked before postal/state heuristics to prevent German 5-digit postcodes
+    // from being misread as US ZIP codes.
+    const IBAN_CC = { DE:'Germany', GB:'United Kingdom', FR:'France', NL:'Netherlands',
+      NO:'Norway', SE:'Sweden', CH:'Switzerland', AT:'Austria', ES:'Spain', IT:'Italy',
+      PL:'Poland', BE:'Belgium', DK:'Denmark', FI:'Finland', PT:'Portugal', IE:'Ireland',
+      NZ:'New Zealand', SG:'Singapore', AU:'Australia', ZA:'South Africa', HU:'Hungary',
+      CZ:'Czech Republic', RO:'Romania', HR:'Croatia', SK:'Slovakia', SI:'Slovenia' };
+    const ibanM = addr.match(/\b([A-Z]{2})\d{2}[\s\d]{10,}/);
+    if (ibanM && IBAN_CC[ibanM[1]]) return IBAN_CC[ibanM[1]];
+
+    // Explicit country name in text
+    if (/\bUnited States\b|\bUSA\b|\bU\.S\.A\b/i.test(addr)) return 'United States';
+    if (/\bAustralia\b/i.test(addr)) return 'Australia';
+    if (/\bUnited Kingdom\b|\bEngland\b|\bScotland\b|\bWales\b/i.test(addr)) return 'United Kingdom';
+    if (/\bCanada\b/i.test(addr)) return 'Canada';
+    if (/\bFrance\b/i.test(addr)) return 'France';
+    if (/\bGermany\b|\bDeutschland\b/i.test(addr)) return 'Germany';
+    if (/\bNetherlands\b|\bHolland\b/i.test(addr)) return 'Netherlands';
+    if (/\bSingapore\b/i.test(addr)) return 'Singapore';
+    if (/\bIndia\b/i.test(addr)) return 'India';
+    if (/\bChina\b/i.test(addr)) return 'China';
+    if (/\bJapan\b/i.test(addr)) return 'Japan';
+    if (/\bUnited Arab Emirates\b|\bUAE\b|\bDubai\b|\bAbu Dhabi\b/i.test(addr)) return 'United Arab Emirates';
+    if (/\bNew Zealand\b/i.test(addr)) return 'New Zealand';
+    if (/\bNorway\b/i.test(addr)) return 'Norway';
+    if (/\bSweden\b|\bSverige\b/i.test(addr)) return 'Sweden';
+    if (/\bSwitzerland\b|\bSchweiz\b/i.test(addr)) return 'Switzerland';
+    if (/\bAustria\b|\bÖsterreich\b/i.test(addr)) return 'Austria';
+    // State/postcode-based inference (only when no IBAN present to avoid false positives)
+    if (/\b\d{4}\b/.test(addr) && AU_STATES.test(addr)) return 'Australia';
+    // US ZIP: require a proper US city/state pair, not just any 5-digit number
+    if (/\b\d{5}(-\d{4})?\b/.test(addr) && US_STATES.test(addr) && !/\b(hannover|münchen|berlin|hamburg|köln|frankfurt|stuttgart|düsseldorf|dortmund|essen|leipzig|bremen|nürnberg|dresden|bochum|wuppertal|bielefeld|bonn|mannheim|karlsruhe|augsburg|wiesbaden|gelsenkirchen|mönchengladbach|braunschweig|aachen|kiel|halle|magdeburg|freiburg|krefeld|lübeck|oberhausen|erfurt|mainz|rostock|kassel|hagen|saarbrücken|hamm|mülheim|osnabrück|ludwigshafen|solingen|leverkusen|oldenburg|neuss|heidelberg|darmstadt|paderborn|regensburg|ingolstadt|würzburg|fürth|ulm|heilbronn|pforzheim|wolfsburg|göttingen|offenbach|bottrop|reutlingen|bremerhaven|koblenz|erlangen|moers|siegen|hildesheim|salzgitter|cottbus)\b/i.test(addr)) return 'United States';
+    if (CA_POST.test(addr) && CA_STATES.test(addr)) return 'Canada';
+    if (UK_POST.test(addr)) return 'United Kingdom';
+    // Well-known cities
+    if (/\b(sydney|melbourne|brisbane|perth|adelaide|canberra|hobart)\b/i.test(addr)) return 'Australia';
+    if (/\b(london|manchester|birmingham|glasgow|edinburgh|bristol|liverpool|leeds|sheffield|nottingham|cardiff)\b/i.test(addr)) return 'United Kingdom';
+    if (/\b(toronto|vancouver|montreal|ottawa|calgary|edmonton|winnipeg|quebec)\b/i.test(addr)) return 'Canada';
+    if (/\b(paris|lyon|marseille|toulouse|bordeaux|nice|nantes|strasbourg|montpellier)\b/i.test(addr)) return 'France';
+    if (/\b(berlin|munich|münchen|frankfurt|hamburg|cologne|köln|stuttgart|düsseldorf|dortmund|essen|leipzig|hannover|bremen|nürnberg|dresden|bochum|wuppertal|bielefeld|bonn|mannheim|karlsruhe|augsburg|wiesbaden|gelsenkirchen|mönchengladbach|braunschweig|aachen|kiel|halle|magdeburg|freiburg)\b/i.test(addr)) return 'Germany';
+    if (/\b(amsterdam|rotterdam|the hague|utrecht|eindhoven|groningen|tilburg|breda|nijmegen)\b/i.test(addr)) return 'Netherlands';
+    if (/\b(auckland|wellington|christchurch|hamilton|dunedin)\b/i.test(addr)) return 'New Zealand';
+    if (/\b(oslo|bergen|trondheim|stavanger|drammen)\b/i.test(addr)) return 'Norway';
+    if (/\b(stockholm|gothenburg|göteborg|malmö|uppsala)\b/i.test(addr)) return 'Sweden';
+    if (/\b(zurich|zürich|geneva|genf|basel|bern|lausanne)\b/i.test(addr)) return 'Switzerland';
+    if (/\b(vienna|wien|graz|linz|salzburg|innsbruck)\b/i.test(addr)) return 'Austria';
+    return null;
+  }
+
+  // ── Country detection (Coupa form only, display only) ────────────
+  function detectCountry(text) {
+    const patterns = [
+      /beneficiary\s+(?:bank\s+)?country[:\s]+(.+?)(?=\s*$)/mi,
+      /bank\s+country[:\s]+(.+?)(?=\s*$)/mi,
+      /country\s+of\s+(?:the\s+)?bank[:\s]+(.+?)(?=\s*$)/mi,
+      /country\s*[\/]\s*region[:\s]+(.+?)(?=\s*$)/mi,
+      /\bcountry[:\s]+(.+?)(?=\s*$)/mi,
+    ];
+    for (const re of patterns) {
+      const m = text.match(re);
+      if (m && m[1]) {
+        const val = m[1].trim().replace(/\s+/g, ' ');
+        if (val.length >= 2 && val.length <= 60) return val;
+      }
+    }
+    // Infer from IBAN prefix
+    const ibanM = text.match(/\b([A-Z]{2})\d{2}(?:[\s]?[A-Z0-9]{1,4}){3,}\b/);
+    if (ibanM) {
+      const IBAN_COUNTRIES = {
+        AD:'Andorra',AE:'United Arab Emirates',AL:'Albania',AT:'Austria',AZ:'Azerbaijan',
+        BA:'Bosnia and Herzegovina',BE:'Belgium',BG:'Bulgaria',BH:'Bahrain',BR:'Brazil',
+        BY:'Belarus',CH:'Switzerland',CR:'Costa Rica',CY:'Cyprus',CZ:'Czech Republic',
+        DE:'Germany',DK:'Denmark',DO:'Dominican Republic',EE:'Estonia',EG:'Egypt',
+        ES:'Spain',FI:'Finland',FO:'Faroe Islands',FR:'France',GB:'United Kingdom',
+        GE:'Georgia',GI:'Gibraltar',GL:'Greenland',GR:'Greece',GT:'Guatemala',
+        HR:'Croatia',HU:'Hungary',IE:'Ireland',IL:'Israel',IQ:'Iraq',
+        IS:'Iceland',IT:'Italy',JO:'Jordan',KW:'Kuwait',KZ:'Kazakhstan',
+        LB:'Lebanon',LC:'Saint Lucia',LI:'Liechtenstein',LT:'Lithuania',LU:'Luxembourg',
+        LV:'Latvia',MC:'Monaco',MD:'Moldova',ME:'Montenegro',MK:'North Macedonia',
+        MR:'Mauritania',MT:'Malta',MU:'Mauritius',NL:'Netherlands',NO:'Norway',
+        PK:'Pakistan',PL:'Poland',PS:'Palestine',PT:'Portugal',QA:'Qatar',
+        RO:'Romania',RS:'Serbia',SA:'Saudi Arabia',SC:'Seychelles',SE:'Sweden',
+        SI:'Slovenia',SK:'Slovakia',SM:'San Marino',ST:'Sao Tome and Principe',SV:'El Salvador',
+        TL:'East Timor',TN:'Tunisia',TR:'Turkey',UA:'Ukraine',VA:'Vatican City',
+        VG:'British Virgin Islands',XK:'Kosovo',
+      };
+      const name = IBAN_COUNTRIES[ibanM[1].toUpperCase()];
+      if (name) return name;
+    }
+    return null;
+  }
+
+  // ── Comparison ───────────────────────────────────────────────────
+  // ABA/ACH checksum: weights 3,7,1 repeated — sum must be divisible by 10
+  function validateACHRouting(num) {
+    if (!num || !/^\d{9}$/.test(num)) return { valid: false, reason: 'Not a 9-digit number' };
+    const d = num.split('').map(Number);
+    const sum = 3*(d[0]+d[3]+d[6]) + 7*(d[1]+d[4]+d[7]) + (d[2]+d[5]+d[8]);
+    if (sum % 10 !== 0) return { valid: false, reason: 'Failed ABA checksum' };
+    return { valid: true };
+  }
+
+  // Strip leading bullets/dashes and Coupa UI button labels (HIDE / SHOW) that
+  // get embedded next to banking field values when a Coupa form is saved to PDF.
+  function cleanVal(v) {
+    return (v || '')
+      .replace(/^[\s\-–—•*·]+/, '')           // leading bullets / dashes
+      .replace(/\b(hide|show)\b/gi, '')        // "X HIDE Y" — word-boundary match
+      .replace(/(?<=[A-Z0-9])(hide|show)/gi, '') // "GB08…HIDE" — no word boundary (concatenated)
+      .replace(/(hide|show)(?=[A-Z0-9])/gi, '') // "HIDEvalue" — leading concatenation
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function deaccent(s) {
+    return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss');
+  }
+
+  function normalize(val) {
+    return deaccent(val || '').toLowerCase().replace(/[\s.\-,]/g, '');
+  }
+
+  function normalizeAddress(addr) {
+    return (addr || '').toLowerCase()
+      .replace(/\bst\.?\b/g, 'street').replace(/\bave\.?\b/g, 'avenue')
+      .replace(/\bblvd\.?\b/g, 'boulevard').replace(/\bdr\.?\b/g, 'drive')
+      .replace(/\brd\.?\b/g, 'road').replace(/\bln\.?\b/g, 'lane')
+      .replace(/\bct\.?\b/g, 'court').replace(/\bpl\.?\b/g, 'place')
+      .replace(/\bhwy\.?\b/g, 'highway').replace(/\bfwy\.?\b/g, 'freeway')
+      .replace(/\bpkwy\.?\b/g, 'parkway').replace(/\bsq\.?\b/g, 'square')
+      // German "Straße" abbreviates to "Str." on bank letterhead but is usually
+      // spelled out on Coupa forms — normalize both to the same ASCII form so
+      // "Kurt-Schumacher-Str. 19" matches "Kurt-Schumacher-Straße 19".
+      .replace(/\bstraße\b/g, 'strasse').replace(/\bstr\.?\b/g, 'strasse')
+      .replace(/\b\sn\b\.?/g, ' north').replace(/\b\ss\b\.?/g, ' south')
+      .replace(/\b\se\b\.?/g, ' east').replace(/\b\sw\b\.?/g, ' west')
+      .replace(/[,.\-#]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  // Two normalized addresses with the exact same set of words/numbers, just in a
+  // different order, are the same address — e.g. "10 Karl Wiechert Allee" (house
+  // number first) vs "Karl Wiechert Allee 10" (German convention: number last).
+  // Plain substring containment doesn't catch this since the number moves.
+  function sameAddressTokens(na1, na2) {
+    const t1 = na1.split(' ').filter(Boolean).sort();
+    const t2 = na2.split(' ').filter(Boolean).sort();
+    return t1.length > 0 && t1.length === t2.length && t1.every((w, i) => w === t2[i]);
+  }
+
+  // Strip common bank legal suffixes before name comparison
+  const BANK_SUFFIXES = /\b(n\.?a\.?|f\.?s\.?b\.?|inc\.?|llc\.?|ltd\.?|corp\.?|co\.?|plc\.?|ag|sa|nv|bv|gmbh|bank|bancorp|financial|group|trust|savings)\b\.?/gi;
+  function normalizeBankName(val) {
+    return (val || '').toLowerCase().replace(BANK_SUFFIXES, '').replace(/[\s.\-,&]/g, '').trim();
+  }
+
+  function compareVal(v1, v2, key) {
+    // Coupa uses a literal "XXX" SWIFT value as a placeholder when no branch
+    // code applies — always treat it as matched, regardless of the bank doc.
+    if (key === 'swift' && v2 && v2.trim().toUpperCase() === 'XXX') return 'match';
+    if (!v1 && !v2) return 'skip';
+    if (!v1 || !v2)  return 'missing';
+    if (normalize(v1) === normalize(v2)) return 'match';
+    // Bank address: expand abbreviations then do substring match
+    // e.g. "4501 23rd Avenue S" matches "4501 23rd Avenue South, Fargo, ND 58104"
+    if (key === 'bank_address') {
+      const na1 = normalizeAddress(v1);
+      const na2 = normalizeAddress(v2);
+      if (na1 === na2) return 'match';
+      if (na1 && na2 && (na1.includes(na2) || na2.includes(na1) || sameAddressTokens(na1, na2))) return 'match';
+    }
+    // Bank name: strip legal suffixes then compare, and check word containment
+    if (key === 'bank_name') {
+      if (normalizeBankName(v1) === normalizeBankName(v2)) return 'match';
+      const clean1 = v1.toLowerCase().replace(BANK_SUFFIXES, '').replace(/\s+/g, ' ').trim();
+      const clean2 = v2.toLowerCase().replace(BANK_SUFFIXES, '').replace(/\s+/g, ' ').trim();
+      // Substring check: "JP MORGAN" matches "JP MORGAN CHASE"
+      if (clean1 && clean2 && (clean1.includes(clean2) || clean2.includes(clean1))) return 'match';
+      // Word containment: all words of the shorter name appear in the longer name
+      const words1 = clean1.split(/\s+/).filter(Boolean);
+      const words2 = clean2.split(/\s+/).filter(Boolean);
+      const shorter = words1.length <= words2.length ? words1 : words2;
+      const longer  = words1.length <= words2.length ? words2 : words1;
+      if (shorter.length >= 1 && shorter.every(w => longer.some(w2 => w2.startsWith(w) || w.startsWith(w2)))) return 'match';
+    }
+    // SWIFT/BIC: an 8-character code and its 11-character form with "XXX" appended
+    // (the standard placeholder for the primary/head office) refer to the same
+    // institution — only the explicit branch code is missing, not a real mismatch.
+    if (key === 'swift') {
+      const s1 = normalize(v1).toUpperCase();
+      const s2 = normalize(v2).toUpperCase();
+      const base1 = s1.length === 11 && s1.endsWith('XXX') ? s1.slice(0, 8) : s1;
+      const base2 = s2.length === 11 && s2.endsWith('XXX') ? s2.slice(0, 8) : s2;
+      if (base1 && base2 && base1 === base2) return 'match';
+    }
+    // General word containment (e.g. full name vs name with middle initial)
+    const words1 = v1.toLowerCase().split(/\s+/);
+    const words2 = v2.toLowerCase().split(/\s+/);
+    const contained = words1.every(w => words2.some(w2 => w2.startsWith(w) || w.startsWith(w2)));
+    if (contained && words1.length >= 2) return 'match';
+    return 'mismatch';
+  }
+
+  // Cross-check: check if a known value from one doc appears anywhere in the other doc's text
+  function searchValueInText(text, value) {
+    if (!value || !text || value.length < 2) return false;
+    const haystack = text.toLowerCase().replace(/\s+/g, ' ');
+    const needle   = value.toLowerCase().replace(/\s+/g, ' ').trim();
+    return haystack.includes(needle);
+  }
+
+  // IBAN-specific search: strips ALL whitespace before comparing so
+  // "FR76 1695 8000..." matches "FR7616958000..." regardless of spacing
+  function searchIBANInText(text, iban) {
+    if (!iban || !text) return null;
+    // Strip spaces AND common IBAN separators (dashes, dots) so that
+    // "ES54-2100-9020-7502-0036-5291" matches "ES5421009020750200365291".
+    const needle  = iban.replace(/[\s\-\.]/g, '').toLowerCase();
+    const stripped = text.replace(/[\s\-\.]/g, '').toLowerCase();
+    if (!stripped.includes(needle)) return null;
+    // Extract the matching IBAN from the original text (strip spaces from found segment)
+    const re = /\b([A-Z]{2}\d{2}(?:\s*[A-Z0-9]{1,4})+)\b/gi;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const candidate = m[1].replace(/\s/g, '').toUpperCase();
+      if (candidate.toLowerCase() === needle && candidate.length >= 15 && candidate.length <= 34) {
+        return candidate;
+      }
+    }
+    return needle.toUpperCase(); // fallback: return clean version
+  }
+
+  // Fallback: search for keyword in text and return the raw value that follows it
+  function findRawHint(text, keywords) {
+    if (!keywords) return null;
+    for (const kw of keywords) {
+      const re = new RegExp(kw.source + '[:\\s]+(.+?)(?=\\s*$)', 'mi');
+      const m = text.match(re);
+      if (m && m[1]) {
+        const val = m[1].trim().replace(/\s+/g, ' ');
+        if (val.length >= 1) return val;
+      }
+    }
+    return null;
+  }
+
+  // Character-level diff: returns HTML showing what changed between v1 and v2
+  function getMismatchDetail(v1, v2) {
+    if (!v1 || !v2) {
+      const present = v1 || v2;
+      const docLabel = v1 ? 'Bank Doc' : 'Coupa Form';
+      return `<span class="diff-absent">Only in ${docLabel}: <strong>${escHtml(present)}</strong></span>`;
+    }
+    // Find common prefix (case-insensitive)
+    const lo1 = v1.toLowerCase(), lo2 = v2.toLowerCase();
+    let pre = 0;
+    while (pre < lo1.length && pre < lo2.length && lo1[pre] === lo2[pre]) pre++;
+    // Find common suffix
+    let e1 = lo1.length - 1, e2 = lo2.length - 1;
+    while (e1 >= pre && e2 >= pre && lo1[e1] === lo2[e2]) { e1--; e2--; }
+    const common_pre = escHtml(v1.slice(0, pre));
+    const common_suf = escHtml(v1.slice(e1 + 1));
+    const diff1 = escHtml(v1.slice(pre, e1 + 1));
+    const diff2 = escHtml(v2.slice(pre, e2 + 1));
+    if (!diff1 && !diff2) return '<span style="color:#276749;font-size:11px;">No visible difference</span>';
+    return `<div class="diff-cell">
+      <div class="diff-row"><span class="diff-label">Bank Doc</span><span class="diff-common">${common_pre}</span><span class="diff-hi1">${diff1 || '—'}</span><span class="diff-common">${common_suf}</span></div>
+      <div class="diff-row"><span class="diff-label">Coupa Form</span><span class="diff-common">${common_pre}</span><span class="diff-hi2">${diff2 || '—'}</span><span class="diff-common">${common_suf}</span></div>
+    </div>`;
+  }
+
+  // ── Plain-English mismatch reason ───────────────────────────────
+  function getMismatchReason(key) {
+    const tips = {
+      routing:        'Routing numbers can differ by type (ACH vs Wire/Fedwire). Confirm the correct one with the supplier.',
+      account_number: 'Account numbers differ. Verify the exact number directly with the supplier.',
+      iban:           'IBANs do not match. Confirm the correct bank account with the supplier.',
+      bank_name:      'May be an abbreviation or parent/subsidiary name variation.',
+      account_name:   'Check for DBA name or legal name differences.',
+      swift:          'SWIFT/BIC codes differ. Verify the correct code with the supplier bank.',
+      sort_code:      'Sort codes differ. Confirm the exact sort code with the supplier.',
+      bank_address:   'May be a formatting or abbreviation difference.',
+      bank_country:   'Confirm the correct payment country with the supplier.',
+    };
+    return tips[key] || 'Values differ between documents. Verify with the supplier.';
+  }
+
+  // ── Confidence level from detection source ───────────────────────
+  // ── Document type auto-detection ─────────────────────────────────
+  // opts.isPdf defaults to true so the existing swap-check call sites in
+  // compareDocuments() (which don't pass opts) keep their current behavior —
+  // the PDF-only Coupa rule only needs to bite at upload-time classification.
+  function detectDocType(text, opts) {
+    const isPdf = !opts || opts.isPdf !== false;
+    const t = (text || '').toLowerCase();
+    let s = { coupa: 0, bank: 0, tax: 0 };
+    // Filename is a weak, corroborating signal only — weighted well below the
+    // strong in-document keywords above, so a misleading filename (e.g. a scan
+    // saved as "Document1.pdf") can't override real content, but it can tip a
+    // borderline/low-text-quality file (a blurry photo, a near-blank OCR pass)
+    // toward the right type instead of "unknown".
+    // Real filenames separate words with "_" or "." (e.g. "W9_Form_Scan.pdf") — but
+    // "_" counts as a word character in regex, so \b wouldn't see a boundary there.
+    // Normalize both to spaces first so the \b-based patterns below actually match.
+    const filename = ((opts && opts.filename) || '').toLowerCase().replace(/[_.]/g, ' ');
+    if (filename) {
+      if (isPdf && /\bcoupa\b/.test(filename)) s.coupa += 3;
+      if (/\bw-?9\b|\bw-?8\b|\bgstin\b|\bgst\b|\bpan\b|\btax\b|\bvat\b|\bein\b|\btin\b|certificate.?of.?registration/.test(filename)) s.tax += 2;
+      if (/\bbank\b|\bvoid(?:ed)?\b|\bwire\b|\bach\b|\bswift\b|\biban\b|remittance/.test(filename)) s.bank += 2;
+    }
+    if (isPdf) {
+      if (t.includes('supplier information')) s.coupa += 3;
+      if (t.includes('primary contact'))      s.coupa += 2;
+      if (t.includes('banking information'))  s.coupa += 3;
+      if (t.includes('po email'))             s.coupa += 2;
+      if (t.includes('legal name'))           s.coupa += 2;
+      if (t.includes('address purpose'))      s.coupa += 2;
+      // Okta-branded onboarding forms are always Coupa supplier forms in this
+      // workflow — a strong, mostly-sufficient signal on its own.
+      if (/\bokta\b/.test(t) || /okta\.com|oktapreview\.com/.test(t)) s.coupa += 6;
+    }
+    if (/w-?9|w-?8/.test(t))               s.tax   += 5;
+    if (t.includes('taxpayer identification')) s.tax += 4;
+    if (t.includes('employer identification')) s.tax += 3;
+    if (t.includes('backup withholding'))   s.tax   += 3;
+    // International tax documents (VAT/GST/residency certificates, national tax IDs) —
+    // without these, non-US vendors' tax docs fall through to "bank" by default.
+    if (/value\s+added\s+tax|vat\s+registration|vat\s+number/.test(t)) s.tax += 4;
+    if (/goods\s+and\s+services\s+tax|gst\s+registration/.test(t))     s.tax += 4;
+    if (/\bgstin\b/.test(t))                s.tax += 4;
+    if (/permanent\s+account\s+number|\bpan\s+card\b/.test(t)) s.tax += 4;
+    if (/certificate\s+of\s+registration/.test(t)) s.tax += 3;
+    if (/certificate\s+of\s+(?:tax\s+)?residency|tax\s+residency/.test(t)) s.tax += 4;
+    if (/steuernummer|ust-idnr/.test(t))     s.tax += 4;
+    if (/\bsiret\b|\bsiren\b/.test(t))       s.tax += 4;
+    if (/codice\s+fiscale/.test(t))          s.tax += 4;
+    if (/\bcif\b|\bnif\b/.test(t))           s.tax += 2;
+    if (/\bkvk\b|chamber\s+of\s+commerce/.test(t)) s.tax += 2;
+    if (t.includes('companies house'))       s.tax += 2;
+    if (t.includes('fiscal code'))           s.tax += 3;
+    if (/\babn\b|australian\s+business\s+number/.test(t)) s.tax += 4;
+    if (/\bacn\b|australian\s+company\s+number/.test(t))  s.tax += 3;
+    // Exclude "permanent account number" (PAN) — it contains "account number" as a
+    // substring and would otherwise falsely add banking-detail weight to a tax document.
+    if (t.includes('account number') && !/permanent\s+account\s+number/.test(t)) s.bank += 2;
+    if (t.includes('sort code'))            s.bank  += 3;
+    if (t.includes('routing number'))       s.bank  += 3;
+    if (/\biban\b/.test(t))                 s.bank  += 2;
+    if (t.includes('account statement'))    s.bank  += 3;
+    if (/voided?\s+check|void\s+check/.test(t)) s.bank += 4;
+    if (/bank\s+letter|bank\s+confirmation|letter\s+of\s+bank/.test(t)) s.bank += 2;
+    if (/wire\s+instructions|remittance\s+advice|beneficiary\s+bank/.test(t)) s.bank += 2;
+    if (/swift\s*code|\bbic\s+code\b/.test(t)) s.bank += 2;
+    if (t.includes('bsb'))                  s.bank += 2;
+    const max = Math.max(s.coupa, s.bank, s.tax);
+    if (max < 2) return 'unknown';
+    if (s.coupa === max) return 'coupa';
+    // A document can carry banking details AND an incidental tax-ID mention
+    // (e.g. a bank confirmation letter that also prints the vendor's EIN) —
+    // banking details should win in that case, per the team's classification rule.
+    if (s.bank > 0 && s.bank + 2 >= s.tax) return 'bank';
+    return s.tax === max ? 'tax' : 'bank';
+  }
+
+  // ── Render ───────────────────────────────────────────────────────
+  async function compareDocuments() {
+    const el = document.getElementById('results');
+    el.innerHTML = '<div class="loading"><div class="spinner"></div><div class="loading-msg">Extracting and comparing fields…</div></div>';
+    el.classList.add('visible');
+    verifiedNotes = {};
+
+    try {
+      const [text1, text2, text3] = await Promise.all([
+        extractText(state.file1),
+        extractText(state.file2),
+        state.file3 ? extractText(state.file3) : Promise.resolve(''),
+      ]);
+
+      // ── Auto-detect document types ──────────────────────────────
+      const dtype1 = detectDocType(text1);
+      const dtype2 = detectDocType(text2);
+      let autoDetectWarn = '';
+      if (dtype1 === 'coupa' && dtype2 === 'bank') {
+        autoDetectWarn = 'Files may be swapped — slot 1 looks like a Coupa form and slot 2 looks like a Bank document.';
+      } else if (dtype1 === 'coupa' && dtype2 !== 'coupa') {
+        autoDetectWarn = 'The Bank Document slot appears to contain a Coupa supplier form.';
+      } else if (dtype2 === 'bank' && dtype1 !== 'bank') {
+        autoDetectWarn = 'The Coupa Form slot appears to contain a bank document.';
+      } else if (dtype1 === 'tax') {
+        autoDetectWarn = 'The Bank Document slot may contain a Tax Form (W-9/W-8).';
+      }
+
+      const rows = FIELD_DEFS.map(def => {
+        const r1 = def.extract(text1);
+        const r2 = def.extract(text2);
+        let v1   = r1 ? cleanVal(r1.value) : null;
+        let v2   = r2 ? cleanVal(r2.value) : null;
+        let as1  = r1 ? r1.detectedAs : null;
+        let as2  = r2 ? r2.detectedAs : null;
+
+        // Value-search cross-check: if a label-based extract failed on one side,
+        // look for the other side's value as plain text in that document.
+        if (def.enableValueSearch) {
+          if (!v1 && v2 && searchValueInText(text1, v2)) {
+            v1  = v2;
+            as1 = 'matched from Coupa form — found in document text';
+          } else if (!v2 && v1 && searchValueInText(text2, v1)) {
+            v2  = v1;
+            as2 = 'matched from Bank Document — found in document text';
+          }
+        }
+
+        // Account name cross-check: if the extractor picked up a wrong value (e.g. a "SWIFT"
+        // badge that appears beside the label), override v1 with the Coupa value when that
+        // value is found verbatim in the bank document (e.g. "AI Hub GmbH" under Account Owner).
+        if (def.key === 'account_name' && v1 && v2 && normalize(v1) !== normalize(v2)) {
+          if (searchValueInText(text1, v2)) {
+            v1  = v2;
+            as1 = 'matched from Coupa form — found in document text';
+          }
+        }
+        // Account name fallback: extractor found nothing — search for the Coupa value in the bank
+        // doc using normalized comparison (strips spaces, dots, dashes — handles "Co.KG" vs "CO K G").
+        if (def.key === 'account_name' && !v1 && v2 && v2.length >= 4) {
+          const normV2  = normalize(v2);
+          const normDoc = normalize(text1);
+          if (normDoc.includes(normV2)) {
+            v1  = v2;
+            as1 = 'matched from Coupa form — found in document text (normalized)';
+          }
+        }
+
+        // Routing number cross-check: bank documents often list multiple routing numbers
+        // (e.g. one for ACH, one for Wire Transfers). The extractor picks the first one found,
+        // but the Coupa form has the ACH routing number. If the Coupa routing exists in the
+        // bank document, use it as the authoritative value.
+        if (def.key === 'routing' && v1 && v2 && normalize(v1) !== normalize(v2)) {
+          if (searchValueInText(text1, v2)) {
+            v1  = v2;
+            as1 = 'matched from Coupa form — found in document text';
+          }
+        }
+
+        // Account number cross-check: some bank documents list multiple account numbers
+        // (e.g. Mercury FX wire instructions show an intermediary bank account "707567692"
+        // as well as the actual beneficiary account "202373162909").  The extractor may
+        // pick up the wrong one.  If the Coupa account number is present in the bank
+        // document, it is the authoritative value — use it.
+        if (def.key === 'account_number' && v1 && v2 && normalize(v1) !== normalize(v2)) {
+          if (searchValueInText(text1, v2)) {
+            v1  = v2;
+            as1 = 'matched from Coupa form — found in document text';
+          }
+        }
+
+        // IBAN cross-check: search with spaces stripped so "FR76 1695 8000..."
+        // matches "FR7616958000..." across documents.
+        if (def.key === 'iban') {
+          if (!v1 && v2) {
+            const found = searchIBANInText(text1, v2);
+            if (found) { v1 = found; as1 = 'IBAN extracted from bank document'; }
+          }
+          if (!v2 && v1) {
+            const found = searchIBANInText(text2, v1);
+            if (found) { v2 = found; as2 = 'IBAN extracted from Coupa form'; }
+          }
+          // Multi-IBAN bank document: the extractor returns the first IBAN found, but
+          // the bank document may list several accounts (e.g. GBP/EUR/USD).  If v1 ≠ v2,
+          // check whether the Coupa IBAN is actually present in the bank document — if so
+          // the right account was submitted and we should use it as the matched value.
+          if (v1 && v2 && normalize(v1) !== normalize(v2)) {
+            const found = searchIBANInText(text1, v2);
+            if (found) {
+              v1  = found;
+              as1 = 'IBAN matched from Coupa form — found in bank document';
+            }
+          }
+        }
+
+        // Partial bank name search: "JP MORGAN" in bank doc matches "JP MORGAN CHASE" in Coupa.
+        // When exact search fails, try progressively shorter word-prefixes of the known name.
+        if (def.key === 'bank_name') {
+          const tryPartial = (knownVal, searchText, setFn) => {
+            if (knownVal) {
+              const words = knownVal.replace(new RegExp(BANK_SUFFIXES.source, 'gi'), '')
+                              .trim().toLowerCase().split(/\s+/).filter(w => w.length > 1);
+              for (let n = words.length; n >= 2; n--) {
+                const partial = words.slice(0, n).join(' ');
+                const hay = searchText.toLowerCase().replace(/\s+/g, ' ');
+                const idx = hay.indexOf(partial);
+                if (idx >= 0) {
+                  const snippet = searchText.slice(idx, idx + partial.length + 20)
+                                    .split(/[\n,;]/)[0].trim();
+                  setFn(snippet || knownVal, `"${partial}" found in document`);
+                  return true;
+                }
+              }
+            }
+            return false;
+          };
+          if (!v1 && v2) tryPartial(v2, text1, (val, note) => { v1 = val; as1 = note; });
+          if (!v2 && v1) tryPartial(v1, text2, (val, note) => { v2 = val; as2 = note; });
+
+          // If v1 was found but doesn't match v2, check whether the Coupa bank name
+          // actually exists verbatim in the bank document (handles cases where the
+          // unlabeled detector picks up a marketing tagline instead of the real bank name,
+          // e.g. "Your Business. Your Family. Your Bank" vs "Triad Bank").
+          // Guard: only run when v2 is a meaningful value (≥ 5 chars and not a single
+          // banking keyword like "account") — prevents false matches on form sub-labels.
+          if (v1 && v2 && normalize(v1) !== normalize(v2) && v2.length >= 5) {
+            if (searchValueInText(text1, v2)) {
+              v1  = v2;
+              as1 = 'matched from Coupa form — found in document text';
+            } else {
+              // Partial search: try progressively shorter prefixes of the Coupa name
+              tryPartial(v2, text1, (val, note) => { v1 = val; as1 = note; });
+            }
+          }
+        }
+
+        // Bank address cross-check: if the exact Coupa address isn't found in the bank doc,
+        // retry with normalized form — handles "Str." vs "Straße"/"Strasse", "ß"→"ss", etc.
+        if (def.key === 'bank_address' && !v1 && v2) {
+          const normalizeAddr = s => s.toLowerCase()
+            .replace(/straße|strasse/gi, 'str')
+            .replace(/ß/g, 'ss')
+            .replace(/str\.\s*/gi, 'str')
+            .replace(/\bstreet\b/gi, 'st')
+            .replace(/\broad\b/gi, 'rd')
+            .replace(/[.\-,]/g, '')
+            .replace(/\s+/g, ' ').trim();
+          const normV2  = normalizeAddr(v2);
+          const normDoc = normalizeAddr(text1);
+          // Match on first 2 meaningful tokens (robust against trailing city/postal)
+          const tokens  = normV2.split(' ').filter(Boolean);
+          const needle  = tokens.slice(0, 2).join(' ');
+          if (needle.length >= 4 && normDoc.includes(needle)) {
+            v1  = v2;
+            as1 = 'matched from Coupa form — found in document text (abbreviation-normalized)';
+          }
+        }
+
+        // Raw hint fallback for still-null values
+        const h1   = !v1 ? findRawHint(text1, def.hintKeywords) : null;
+        const h2   = !v2 ? findRawHint(text2, def.hintKeywords) : null;
+        const status = compareVal(v1, v2, def.key);
+        let diffHtml = '';
+        if (status === 'mismatch' || status === 'missing') {
+          diffHtml = getMismatchDetail(v1, v2);
+          diffHtml += `<div class="mismatch-reason">💡 ${getMismatchReason(def.key)}</div>`;
+        }
+        return { ...def, v1, v2, as1, as2, h1, h2, status, diffHtml };
+      }).filter(r => r !== null && r.status !== 'skip' && (r.v2 !== null || r.h2 !== null));
+
+      const country = detectCountry(text2);
+      const isUS    = country && /united states|usa|\bU\.?S\.?A?\b/i.test(country);
+
+      // Extract vendor company name from the Coupa form.
+      // Coupa change-forms show OLD_VALUE NEW_VALUE for updated fields (old is strikethrough
+      // in the PDF but plain text when extracted).
+      // Strategy: the "Supplier Information" header at the top of the form always shows the
+      // OLD/stored company name.  We strip that prefix from the "Company Name" field content
+      // to isolate the new (updated) name.  Falls back to word-repeat deduplication for forms
+      // that weren't changed.
+      const siM = text2.match(/supplier\s+information[:\s]+([^\n]{2,120})/i);
+      const oldStoredName = siM ? cleanVal(siM[1]).toLowerCase() : null;
+
+      function dedupeVendorName(val) {
+        if (!val || val.length < 8) return val;
+        const firstWord = val.trim().split(/\s+/)[0];
+        if (!firstWord || firstWord.length < 2) return val;
+        const minIdx = Math.floor(val.length * 0.3);
+        const safeWord = firstWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const m2 = val.slice(minIdx).match(new RegExp('\\b' + safeWord + '\\b', 'i'));
+        return m2 ? val.slice(minIdx + m2.index).trim() : val;
+      }
+
+      let vendorName = null;
+      const cnM = text2.match(/company\s+name[:\s]+(?:[-–•*]\s*)?([^\n]{2,200})/i);
+      if (cnM && cnM[1]) {
+        let v = cleanVal(cnM[1]);
+        if (oldStoredName && v.toLowerCase().startsWith(oldStoredName)) {
+          // Strip the old (strikethrough) prefix to get only the new value
+          const stripped = v.slice(oldStoredName.length).trim();
+          if (stripped.length >= 3) v = stripped;
+        } else {
+          // No different old name — use word-repeat deduplication as fallback
+          v = dedupeVendorName(v);
+        }
+        if (v.length >= 2 && v.length <= 120 && !/^(legal\s+name|display\s+name|beneficiary\s+name)$/i.test(v)) {
+          vendorName = v;
+        }
+      }
+      lastVendorName = vendorName;
+
+      // ── DBA name from Coupa form and/or Tax Form ──────────────────
+      // Coupa: "DBA Name" field (sub-label "Display Name" means empty — skip it)
+      // W-9:  Line 2 "Business name/disregarded entity name, if different from above"
+      let dbaName = null;
+      const dbaM = text2.match(/dba\s+name[:\s]+([^\n]{2,80})/i);
+      if (dbaM && dbaM[1]) {
+        const v = cleanVal(dbaM[1]);
+        if (v.length >= 2 && !/^display\s+name$/i.test(v)) dbaName = v;
+      }
+      if (!dbaName && text3) {
+        const dbaTaxM = text3.match(/business\s+name(?:\/disregarded\s+entity\s+name)?[^:\n]{0,60}[:\s]+([^\n]{2,80})/i)
+                     || text3.match(/disregarded\s+entity\s+name[:\s]+([^\n]{2,80})/i)
+                     || text3.match(/trade\s+name[:\s]+([^\n]{2,80})/i);
+        if (dbaTaxM && dbaTaxM[1]) {
+          // Strip leading checkbox/selection markers (< > ► ☐ ☑ □ ■ etc.) that appear
+          // in W-9 form PDFs when an empty "Business name" field is followed by box 3a.
+          const v = cleanVal(dbaTaxM[1]).replace(/^[\<\>►▶☐☑□■✓✗\[\]\(\)]+\s*/, '');
+          // Reject W-9 instruction lines (start with step numbers, contain form keywords)
+          const isInstruction = /^(\d+[a-z]?\s|check\s+the|if\s+different|if\s+applicable|enter\s+|see\s+instructions|for\s+federal|required|optional|disregarded|sole\s+prop|limited\s+liability|c\s+corp|s\s+corp|partnership|trust|estate)/i.test(v);
+          if (v.length >= 2 && v.length <= 80 && !isInstruction && !/^(n\/a|none|na|display\s+name)$/i.test(v)) {
+            dbaName = v;
+          }
+        }
+      }
+
+      // ── Tax ID from Coupa form ─────────────────────────────────────
+      const taxIdM = text2.match(/(?:federal|international)\s+tax\s+(?:id|identification)(?:\s+number)?[:\s]+([^\n]{2,40})/i);
+      const taxId  = taxIdM ? cleanVal(taxIdM[1]) : null;
+      const taxIdLabel = isUS ? 'US Tax ID' : 'International Tax ID';
+
+      // ── Primary Address from Coupa form ───────────────────────────
+      // Coupa forms prefix required fields with strikethrough placeholder text
+      // ("REQUIRED FIELD", "PLEASE INPUT ADDRESS", etc.) — strip them.
+      function stripPlaceholder(val) {
+        if (!val) return null;
+        const c = val
+          // Strip underscore-wrapped variants: _Required_Field_, _REQUIRED_FIELD_, etc.
+          .replace(/_+required_+field_+\s*/gi, '')
+          // Strip space-separated variants at the start or inline
+          .replace(/(?:^|\s)required\s+field\s*/gi, ' ')
+          // Strip "PLEASE INPUT ..." variants
+          .replace(/please\s+(?:input|populate)(?:\s+\w+){0,3}\s*/gi, '')
+          .replace(/\s+/g, ' ').trim();
+        return c.length >= 2 ? c : null;
+      }
+      function coupaField(re) {
+        const m = text2.match(re);
+        return m ? stripPlaceholder(m[1]) : null;
+      }
+      // Street extraction: scan up to 3 lines after the label so we still get the value
+      // when "REQUIRED FIELD" is on its own line and the actual address is on the next line.
+      function coupaStreetScan(re) {
+        const m = text2.match(re);
+        if (!m) return null;
+        const afterLabel = text2.slice(m.index + m[0].length);
+        const lines = afterLabel.split('\n').slice(0, 4).map(l => l.trim()).filter(Boolean);
+        const NEXT_FIELD = /^(?:street\s+address|city|postal|location|address\s+name|address\s+purpose|region|dba)/i;
+        for (const line of lines) {
+          if (NEXT_FIELD.test(line)) break;
+          const v = stripPlaceholder(line);
+          if (v && v.length >= 3) return v;
+        }
+        return null;
+      }
+      const pStreet1 = coupaStreetScan(/street\s+address(?!\s+\d\b)[:\s]*/i);
+      const pStreet2 = coupaStreetScan(/street\s+address\s+2[:\s]*/i);
+      const pCity    = coupaField(/(?:^|\n)\s*city[:\s]+([^\n]{2,60})/im);
+      // For postal code, scan directly for the digits/code after the label — this tolerates
+      // "REQUIRED FIELD" and the actual value being on separate lines (different Y coords).
+      // \d{4,10}(?:-\d{2,6})? keeps a US ZIP+4 ("60610-3016") as one value — without the
+      // optional dash suffix this stopped at "60610" and silently dropped the "+4" half.
+      const pPostalM = text2.match(/(?:^|\n)\s*postal\s+code[\s\S]{0,80}?(\b\d{4,10}(?:-\d{2,6})?\b|\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b)/im);
+      const pPostal  = pPostalM ? pPostalM[1].replace(/\s/g, '') : null;
+      // Filter out values that are actually form field labels captured when the field is empty
+      // (e.g. "Street Address 2" is empty → next line "Street Address 3" gets captured instead).
+      const SUB_LABEL = /^(building\s+number|beneficiary\s+name|suite|floor|unit|street\s+address\s+[2-4]|city|postal\s+code|location\s+code|address\s+name|address\s+purpose|region|dba\s+name|display\s+name|legal\s+name|primary\s+contact)$/i;
+      const primaryAddr = [pStreet1, pStreet2, pCity, pPostal]
+        .filter(p => p && !SUB_LABEL.test(p))
+        .join(', ') || null;
+
+      // ── Remit-To Address from Coupa form ───────────────────────────────────
+      // Coupa forms may list multiple addresses (e.g. billing + remit-to) separated
+      // by an "Address Purpose: Remit-To" label or a standalone "Remit To" header.
+      let remitAddr = null, remitStreet1 = null, remitStreet2 = null;
+      let remitCity = null, remitPostal = null, remitCountry = null, remitRegion = null;
+      const remitIdx = text2.search(/\b(?:remit[\s\-]+to\b(?:\s+address)?|address\s+(?:name|purpose)[:\s]+remit[\s\-]+to)\b/i);
+      if (remitIdx >= 0) {
+        // Use a wide window — 2000 chars — to avoid cutting off fields that appear far below the header.
+        const rBlock = text2.slice(remitIdx, Math.min(text2.length, remitIdx + 2000));
+
+        // rField(labelPat): extract the value for a labeled form field.
+        // Strategy A — same-line inline: "Label   Value" or "Label: Value"
+        //   Uses [: \t]+ (no newlines) so we don't accidentally consume to the next line.
+        // Strategy B — next-line: value is on the line immediately after the label.
+        //   Only returns the next non-blank line if it isn't itself a known field label.
+        // Matches if the line STARTS WITH a known label — not just if the whole line IS the
+        // label. When a field is empty, its value column collapses and the next field's
+        // label ends up sharing a line with ITS OWN value (e.g. "City New York" = the "City"
+        // label immediately followed by the actual city value, both on one line because the
+        // preceding field rendered nothing). An exact-match check let that whole line get
+        // captured as the previous (empty) field's value instead of stopping there.
+        const KNOWN_LBL_RE = /^(?:region|street\s+address|city|postal\s+code|location\s+code|address\s+(?:name|purpose)|country|state|remit|billing|banking|dba\s+name|legal\s+name)\b/i;
+        const rField = labelPat => {
+          // Strategy A: value on the same line
+          const aRe = new RegExp('(?:^|\\n)[ \\t]*(?:' + labelPat + ')[: \\t]+([^\\n]{1,120})', 'im');
+          const am  = rBlock.match(aRe);
+          if (am && am[1]) {
+            const v = stripPlaceholder(am[1].trim());
+            if (v && v.length >= 1) return v;
+          }
+          // Strategy B: label on its own line, value on next non-blank line
+          const bRe = new RegExp('(?:^|\\n)[ \\t]*(?:' + labelPat + ')[ \\t]*\\n', 'im');
+          const bm  = rBlock.match(bRe);
+          if (!bm) return null;
+          const after = rBlock.slice(bm.index + bm[0].length);
+          for (const ln of after.split('\n').slice(0, 8)) {
+            const t = ln.trim();
+            if (!t) continue;
+            if (KNOWN_LBL_RE.test(t)) break;
+            const v = stripPlaceholder(t);
+            if (v && v.length >= 1) return v;
+          }
+          return null;
+        };
+
+        remitRegion  = rField('region');
+        remitStreet1 = rField('street\\s+address(?!\\s+2\\b)(?!\\s*\\d\\b)');
+        remitStreet2 = rField('street\\s+address\\s*2');
+        remitCity    = rField('city');
+        remitCountry = rField('country');
+
+        // Postal: collect ALL matches in the block with a global scan, take the LAST one.
+        // This avoids picking up the primary address postal when both appear in the same block.
+        // \d{4,10}(?:-\d{2,6})? keeps a US ZIP+4 ("60610-3016") as one value per line — matching
+        // bare \d{4,10} globally split it into two separate hits ("60610" and "3016") and the
+        // "take the last one" step then grabbed just the "+4" half instead of the full ZIP.
+        const postalAll = [];
+        const postalGRe = /(?:^|\n)[ \t]*postal\s+code[: \t]*([^\n]{0,60})/gim;
+        let pm;
+        while ((pm = postalGRe.exec(rBlock)) !== null) {
+          const hit = pm[1].match(/\b\d{4,10}(?:-\d{2,6})?\b/);
+          if (hit) postalAll.push(hit[0]);
+        }
+        remitPostal = postalAll.length > 0 ? postalAll[postalAll.length - 1] : null;
+
+        remitAddr = [remitStreet1, remitStreet2, remitCity, remitPostal]
+          .filter(p => p && !SUB_LABEL.test(p))
+          .join(', ') || null;
+      }
+
+      // ── Tax Form verification ─────────────────────────────────────
+      // Only runs when a Tax Form (file3) was uploaded.  Checks whether the
+      // company name, address, and tax ID from the Coupa form can be found
+      // in the Tax Form (W-9, W-8, etc.) using the field keywords the user specified.
+      // Each check returns { ok, evidence, needle } instead of a bare boolean so the
+      // approver can see exactly what was searched for and what (if anything) was found,
+      // rather than a bare ✓/✗ they'd have to take on faith.
+      function tfEvidence(rawText, needle, normFn) {
+        if (!needle) return { ok: false, evidence: null, needle: null };
+        const normT3 = normFn(rawText);
+        const idx = normT3.indexOf(normFn(needle));
+        if (idx === -1) return { ok: false, evidence: null, needle };
+        const rawIdx = rawText.toLowerCase().indexOf(needle.toLowerCase().slice(0, Math.min(needle.length, 15)));
+        const evidence = rawIdx >= 0
+          ? rawText.slice(Math.max(0, rawIdx - 20), rawIdx + needle.length + 20).replace(/\s+/g, ' ').trim()
+          : needle;
+        return { ok: true, evidence, needle };
+      }
+      function tfTip(check) {
+        if (!check) return '';
+        return check.ok
+          ? `Found in Tax Form: "${escHtml(check.evidence || check.needle || '')}"`
+          : `Not found in Tax Form${check.needle ? ` — expected "${escHtml(check.needle)}"` : ''}`;
+      }
+
+      let tfCheckName = { ok: false, evidence: null, needle: null };
+      let tfCheckAddr = { ok: false, evidence: null, needle: null };
+      let tfCheckTaxId = { ok: false, evidence: null, needle: null };
+      if (text3 && text3.trim().length > 20) {
+        // Company name: normalize punctuation on both sides so "PIONEER TOPCO, LP"
+        // matches "PIONEER TOPCO LP" (comma/period differences are ignored).
+        if (vendorName && vendorName.length >= 3) {
+          const normStr = s => s.toLowerCase().replace(/[,.\-]/g, '').replace(/\s+/g, ' ').trim();
+          tfCheckName = tfEvidence(text3, vendorName, normStr);
+        }
+
+        // Address: try multiple components so we still verify when only city+postal
+        // were extracted from the Coupa form (Coupa sometimes omits the street).
+        // Also normalize punctuation so "LAS VEGAS, NV 89109" matches "LAS VEGAS 89109".
+        {
+          const normStr = s => s.toLowerCase().replace(/[,.\-]/g, '').replace(/\s+/g, ' ').trim();
+          const addrNeedle = pStreet1 || (pCity && pPostal ? `${pCity}, ${pPostal}` : pPostal) || null;
+          // 1. Street match
+          if (pStreet1 && pStreet1.length >= 4)
+            tfCheckAddr = tfEvidence(text3, pStreet1, normStr);
+          // 2. City + postal together (allows state abbreviation between them)
+          if (!tfCheckAddr.ok && pCity && pPostal && pCity.length >= 2) {
+            const normT3 = normStr(text3);
+            const pat = new RegExp(normStr(pCity).replace(/\s+/g,'\\s+') + '[\\s\\S]{0,25}?' + normStr(pPostal));
+            const m = normT3.match(pat);
+            tfCheckAddr = m
+              ? { ok: true, evidence: m[0], needle: `${pCity}, ${pPostal}` }
+              : { ok: false, evidence: null, needle: `${pCity}, ${pPostal}` };
+          }
+          // 3. Postal code alone as last resort
+          if (!tfCheckAddr.ok && pPostal && pPostal.length >= 4) {
+            const fallback = tfEvidence(text3, pPostal, normStr);
+            tfCheckAddr = fallback.ok ? fallback : { ok: false, evidence: null, needle: addrNeedle };
+          }
+          if (!tfCheckAddr.needle) tfCheckAddr.needle = addrNeedle;
+        }
+
+        // Tax ID matching uses several methods because the IRS W-9 stores each EIN digit
+        // in a separate AcroForm box field — extraction produces individual lines like
+        // "f1_14[0]: 9 / f1_15[0]: 3 / …" whose interleaved field-name digits break
+        // a simple contiguous-digit search.
+        if (taxId && taxId.length >= 4) {
+          const digitsOnly = taxId.replace(/\D/g, '');
+          if (digitsOnly.length >= 4) {
+            // Find the area around the EIN/Tax ID label — used by Methods 1 & 2
+            const einLabelM = text3.match(
+              /(?:employer\s+identification\s+number|federal\s+tax\s+(?:id|identification)|foreign\s+tin)([\s\S]{0,2000})/i
+            );
+            const einArea = einLabelM ? einLabelM[0] : text3;
+
+            // Method 1 — raw digit strip scoped to EIN area, fallback to full text
+            let found = einArea.replace(/\D/g, '').includes(digitsOnly)
+                     || text3.replace(/\D/g, '').includes(digitsOnly);
+            let evidenceSnippet = found && einLabelM ? einLabelM[0].replace(/\s+/g, ' ').trim().slice(0, 80) : null;
+
+            // Method 2 — flexible keyword-anchored search (works for individual-box W-9)
+            // Gap increased to 300 chars to handle PDFs where digit boxes are spread out.
+            if (!found) {
+              const flexPat = digitsOnly.split('').join('[\\s\\S]{0,300}?');
+              try {
+                const m = einArea.match(new RegExp(flexPat));
+                if (m) { found = true; evidenceSnippet = m[0].replace(/\s+/g, ' ').trim().slice(0, 80); }
+              } catch(e) {}
+            }
+
+            // Method 3 — AcroForm values concatenation
+            // The IRS W-9 stores each EIN box digit in a separate AcroForm field, so
+            // text3 contains consecutive lines like "f1_14[0]: 9 / f1_15[0]: 3 / …".
+            // Extracting just the VALUE portion from every "fieldname: value" line and
+            // joining them gives "...934628017..." as a contiguous digit run.
+            if (!found) {
+              const acroVals = (text3.match(/^[^:\n]+:\s*([^\n]+)/mg) || [])
+                .map(ln => ln.replace(/^[^:]+:\s*/, '').trim())
+                .join('');
+              if (acroVals.replace(/\D/g, '').includes(digitsOnly)) {
+                found = true;
+                evidenceSnippet = 'Matched via form field values (digit boxes)';
+              }
+            }
+
+            // Method 4 — direct formatted search (XX-XXXXXXX and space-separated variants)
+            if (!found && digitsOnly.length === 9) {
+              const ein1 = digitsOnly.slice(0, 2) + '-' + digitsOnly.slice(2);
+              const ein2 = digitsOnly.slice(0, 2) + ' ' + digitsOnly.slice(2);
+              if (text3.includes(ein1) || text3.includes(ein2) || text3.includes(digitsOnly)) {
+                found = true;
+                evidenceSnippet = text3.includes(ein1) ? ein1 : (text3.includes(ein2) ? ein2 : digitsOnly);
+              }
+            }
+
+            tfCheckTaxId = { ok: found, evidence: evidenceSnippet, needle: taxId };
+          } else {
+            // Alphanumeric Foreign TIN — strip all non-alphanumeric and compare
+            const idNeedle = taxId.replace(/[^a-z0-9]/gi, '').toLowerCase();
+            const found = text3.replace(/[^a-z0-9]/gi, '').toLowerCase().includes(idNeedle);
+            tfCheckTaxId = { ok: found, evidence: found ? taxId : null, needle: taxId };
+          }
+        }
+      }
+      const hasTaxForm = text3 && text3.trim().length > 20;
+
+      // DBA tax form check (same punctuation-tolerant normalization as company name)
+      let tfCheckDba = { ok: false, evidence: null, needle: null };
+      if (dbaName && hasTaxForm) {
+        const normStr = s => s.toLowerCase().replace(/[,.\-]/g, '').replace(/\s+/g, ' ').trim();
+        tfCheckDba = tfEvidence(text3, dbaName, normStr);
+      }
+
+      // ── Contact info from Coupa form ─────────────────────────────
+      // Coupa change-forms show OLD NEW on the same line — extract the
+      // LAST valid email / phone in the captured text to get the new value.
+      // Normalize common PDF ligatures before parsing (e.g. ﬁ → fi, ﬂ → fl).
+      // Without this, "ﬁnance@..." is read as "nance@..." because ﬁ ≠ \w.
+      function normalizeLigatures(s) {
+        return (s || '')
+          .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl').replace(/ﬀ/g, 'ff')
+          .replace(/ﬃ/g, 'ffi').replace(/ﬄ/g, 'ffl').replace(/ﬅ/g, 'st');
+      }
+      function lastEmail(str) {
+        if (!str) return null;
+        let n = normalizeLigatures(str);
+        // Join ligature-split prefixes: "fi nance@..." → "finance@..."
+        n = n.replace(/\b([a-z]{1,4})\s+([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})/gi,
+          (_, pfx, mail) => pfx + mail);
+        // Split camelCase-concatenated text from adjacent PDF text items:
+        // "scott.davies@grainger.comScott.Davies" → "...grainger.com Scott.Davies"
+        n = n.replace(/([a-z])([A-Z])/g, '$1 $2');
+        const all = n.match(/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/gi);
+        return all ? all[all.length - 1] : null;
+      }
+      // Multi-line email scan: handles value on next line, placeholder on same line,
+      // and split prefix text items (e.g. "AP" on one line + "_INQUIRY@..." on next).
+      function coupaEmailScan(text, labelRe) {
+        const m = text.match(labelRe);
+        if (!m) return null;
+        const afterLabel = text.slice(m.index + m[0].length);
+        const lines = afterLabel.split('\n').slice(0, 6).map(l => l.trim()).filter(Boolean);
+        const STOP = /^(?:po\s+email|email\s+address|mobile|phone|primary\s+contact|fax|address|city|region|postal|street)/i;
+        let prevLine = '';
+        for (const line of lines) {
+          if (STOP.test(line)) break;
+          const clean = stripPlaceholder(line) || '';
+          const email = lastEmail(clean || line);
+          if (email) return email;
+          // Try joining with previous line for split items: "AP" + "_INQUIRY@..." → "AP_INQUIRY@..."
+          if (prevLine) {
+            const joined = lastEmail(prevLine + (clean || line));
+            if (joined) return joined;
+          }
+          prevLine = clean || line;
+        }
+        return null;
+      }
+      function lastPhone(str) {
+        if (!str) return null;
+        const all = str.match(/\+?[\d][\d\s\(\)\-]{7,20}\d/g);
+        return all ? all[all.length - 1].replace(/\s+/g, ' ').trim() : null;
+      }
+      function validatePhone(phone, detectedCountry) {
+        if (!phone) return null;
+        const digits = phone.replace(/\D/g, '');
+        // Country code → { label, minLen, maxLen, countryKeywords }
+        const CC = {
+          '1':   { label: 'US / Canada',   min: 11, max: 11, kw: /united states|usa|canada/i },
+          '44':  { label: 'UK',             min: 11, max: 12, kw: /united kingdom|england|scotland|wales/i },
+          '61':  { label: 'Australia',      min: 11, max: 11, kw: /australia/i },
+          '49':  { label: 'Germany',        min: 10, max: 13, kw: /germany|deutschland/i },
+          '33':  { label: 'France',         min: 11, max: 11, kw: /france/i },
+          '47':  { label: 'Norway',         min: 10, max: 10, kw: /norway/i },
+          '31':  { label: 'Netherlands',    min: 11, max: 11, kw: /netherlands|holland/i },
+          '81':  { label: 'Japan',          min: 11, max: 12, kw: /japan/i },
+          '65':  { label: 'Singapore',      min: 10, max: 10, kw: /singapore/i },
+          '91':  { label: 'India',          min: 12, max: 12, kw: /india/i },
+          '34':  { label: 'Spain',          min: 11, max: 11, kw: /spain/i },
+          '39':  { label: 'Italy',          min: 11, max: 13, kw: /italy/i },
+          '55':  { label: 'Brazil',         min: 12, max: 13, kw: /brazil/i },
+          '52':  { label: 'Mexico',         min: 12, max: 12, kw: /mexico/i },
+          '82':  { label: 'South Korea',    min: 11, max: 12, kw: /korea/i },
+          '971': { label: 'UAE',            min: 12, max: 12, kw: /emirates|uae/i },
+          '972': { label: 'Israel',         min: 12, max: 12, kw: /israel/i },
+          '48':  { label: 'Poland',         min: 11, max: 11, kw: /poland/i },
+          '46':  { label: 'Sweden',         min: 10, max: 12, kw: /sweden/i },
+          '41':  { label: 'Switzerland',    min: 11, max: 11, kw: /switzerland/i },
+          '63':  { label: 'Philippines',    min: 12, max: 12, kw: /philippines/i },
+          '64':  { label: 'New Zealand',    min: 10, max: 11, kw: /new zealand/i },
+        };
+        // Try 3-digit codes first, then 2-digit, then 1-digit
+        const order = ['971','972','63','64','55','52','82','86','91','65','81','47','49','33','44','61','48','46','41','34','39','31','1'];
+        let info = null, code = null;
+        for (const c of order) {
+          if (digits.startsWith(c) && CC[c]) { code = c; info = CC[c]; break; }
+        }
+        if (!info) return { valid: false, tip: '✗ Invalid — unrecognized country code' };
+        const lenOk = digits.length >= info.min && digits.length <= info.max;
+        if (!lenOk) return { valid: false, tip: `✗ Invalid — wrong digit count for +${code} (${info.label})` };
+        if (detectedCountry && info.kw && !info.kw.test(detectedCountry))
+          return { valid: false, tip: `✗ Invalid — +${code} is ${info.label}, country is ${detectedCountry}` };
+        return { valid: true, tip: `✓ Valid — ${info.label} number` };
+      }
+      const t2n = normalizeLigatures(text2);   // ligature-normalized Coupa text
+      const cPhoneM   = t2n.match(/mobile\s+(?:phone|number)[:\s]+([^\n]{5,80})/i);
+      const contactEmail = coupaEmailScan(t2n, /email\s+address\s*[:\s]*/i);
+      const mobilePhone  = cPhoneM ? lastPhone(cPhoneM[1]) : null;
+      const poEmail      = coupaEmailScan(t2n, /po\s+email\s*[:\s]*/i);
+      const hasContact   = contactEmail || mobilePhone || poEmail;
+
+      // Swift Code is not applicable for US domestic transfers
+      const US_FIELDS    = ['account_name', 'iban', 'account_number', 'routing', 'bank_name', 'bank_address', 'bank_country', 'bank_postal'];
+      const filteredRows = isUS ? rows.filter(r => US_FIELDS.includes(r.key)) : rows;
+
+      const mismatches = filteredRows.filter(r => r.status === 'mismatch');
+      const missing    = filteredRows.filter(r => r.status === 'missing');
+      const matches    = filteredRows.filter(r => r.status === 'match');
+      const isImage    = text1.startsWith('[IMAGE') || text2.startsWith('[IMAGE');
+
+      lastRows = filteredRows;
+      let html = `<div class="results-header">
+        <h2>Comparison Results</h2>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div class="badges">
+            ${mismatches.length ? `<span class="badge badge-mismatch">✗ ${mismatches.length} Mismatch${mismatches.length > 1 ? 'es' : ''}</span>` : ''}
+            ${missing.length    ? `<span class="badge badge-missing">? ${missing.length} Field${missing.length > 1 ? 's' : ''} Missing</span>` : ''}
+            ${(mismatches.length > 0 || missing.length > 0) ? `<span class="badge badge-match">✓ ${matches.length} Match${matches.length !== 1 ? 'es' : ''}</span>` : ''}
+          </div>
+          <div class="export-wrap">
+            <button class="btn-export" onclick="exportCSV()" title="Export as CSV">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export CSV
+            </button>
+            <button class="btn-export" onclick="printResults()" title="Print or save as PDF">
+              <svg viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              Print / PDF
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="vendor-info-wrap">
+        <div class="vendor-info-main">
+          ${vendorName ? `<div class="vendor-name-line"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${escHtml(vendorName)}${hasTaxForm ? `<span class="tf-badge ${tfCheckName.ok ? 'tf-verified' : 'tf-missing'}" data-tip="${tfTip(tfCheckName)}">${tfCheckName.ok ? '✓' : '✗'}</span>` : ''}</div>` : ''}
+          ${dbaName ? `<div class="vendor-meta" style="padding-left:23px;margin-top:1px;"><span style="font-size:10px;font-weight:700;color:#a0aec0;text-transform:uppercase;letter-spacing:0.4px;margin-right:4px;">DBA</span>${escHtml(dbaName)}${hasTaxForm ? `<span class="tf-badge ${tfCheckDba.ok ? 'tf-verified' : 'tf-missing'}" data-tip="${tfTip(tfCheckDba)}">${tfCheckDba.ok ? '✓' : '✗'}</span>` : ''}</div>` : ''}
+          ${(taxId || primaryAddr || country) ? `<hr class="vendor-info-divider">` : ''}
+          ${taxId ? `<div class="vendor-meta"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg><span><span class="vendor-meta-label">${taxIdLabel}:</span> ${escHtml(taxId)}${hasTaxForm ? `<span class="tf-badge ${tfCheckTaxId.ok ? 'tf-verified' : 'tf-missing'}" data-tip="${tfTip(tfCheckTaxId)}">${tfCheckTaxId.ok ? '✓' : '✗'}</span>` : ''}</span></div>` : ''}
+          ${primaryAddr ? `<div class="vendor-meta"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${escHtml(primaryAddr)}${hasTaxForm ? `<span class="tf-badge ${tfCheckAddr.ok ? 'tf-verified' : 'tf-missing'}" data-tip="${tfTip(tfCheckAddr)}">${tfCheckAddr.ok ? '✓' : '✗'}</span>` : ''}</span></div>` : ''}
+          ${country ? `<div class="vendor-meta"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span><span class="vendor-meta-label">Country:</span> ${escHtml(country)}</span></div>` : ''}
+        </div>
+        ${hasContact ? `<div class="vendor-contact-panel">
+          <div class="vendor-contact-title">Primary Contact</div>
+          ${contactEmail ? `<div class="vendor-contact-row"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><span><a href="mailto:${escHtml(contactEmail)}">${escHtml(contactEmail)}</a></span></div>` : ''}
+          ${mobilePhone ? (() => { const pv = validatePhone(mobilePhone, country); return `<div class="vendor-contact-row"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg><span class="phone-tip" data-tip="${pv ? escHtml(pv.tip) : ''}">${escHtml(mobilePhone)}</span></div>`; })() : ''}
+          ${poEmail ? `<div class="vendor-contact-row"><svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><span><span class="vc-label">PO:</span><a href="mailto:${escHtml(poEmail)}">${escHtml(poEmail)}</a></span></div>` : ''}
+        </div>` : ''}
+      </div>`;
+
+      if (autoDetectWarn) {
+        html += `<div class="autodetect-banner">
+          <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <strong>Auto-Detect:</strong>&nbsp;${escHtml(autoDetectWarn)}
+        </div>`;
+      }
+
+      if (mismatches.length === 0 && missing.length === 0 && matches.length > 0) {
+        const comparedDocs = hasTaxForm ? 'Bank Document, Coupa Form, and Tax Form' : 'Bank Document and Coupa Form';
+        html += `<div class="all-match-bar">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          All Fields Match
+          <span class="all-match-sub">— Good to proceed. All details across the ${comparedDocs} are consistent.</span>
+        </div>`;
+      }
+
+      if ((mismatches.length + missing.length) >= 5) {
+        html += `<div class="alert-manual" id="needsManualBanner">
+          <div class="alert-manual-icon">⚠️</div>
+          <div>
+            <div class="alert-manual-title">Needs Manual Checking</div>
+            <div class="alert-manual-sub">${mismatches.length + missing.length} fields have mismatches or missing values — please review this vendor's banking details manually before proceeding.</div>
+          </div>
+        </div>`;
+      }
+
+      if (isImage) {
+        html += `<div class="alert alert-info">ℹ OCR was used to read text from one or both image files. Accuracy depends on image quality — review the Extracted Text Preview below to verify what was read.</div>`;
+      }
+
+      if (mismatches.length === 0 && missing.length === 0 && matches.length === 0) {
+        html += `<div class="no-extract"><strong>No fields could be extracted.</strong> This usually means:<br>
+          • The PDFs are scanned images (not text-based)<br>
+          • The document uses non-standard formatting<br>
+          • The files may be password-protected<br><br>
+          Check the <em>Extracted Text Preview</em> below to see what was parsed.</div>`;
+      } else {
+        // Sort: mismatches → missing → matches; within each group high-priority first
+        const order = { mismatch: 0, missing: 1, match: 2 };
+        const pord  = { high: 0, medium: 1, low: 2 };
+        const gord = { 'Banking Information': 0 };
+        filteredRows.sort((a, b) =>
+          (gord[a.group] ?? 9) - (gord[b.group] ?? 9) ||
+          order[a.status] - order[b.status] ||
+          pord[a.priority] - pord[b.priority]
+        );
+
+        html += `<table>
+          <thead>
+            <tr>
+              <th style="width:16%">Field</th>
+              <th style="width:24%" id="colSrc">Bank Document</th>
+              <th style="width:24%">Coupa Form</th>
+              <th style="width:10%">Status</th>
+              <th style="width:26%">Mismatch Detail</th>
+            </tr>
+          </thead>
+          <tbody>`;
+        let currentGroup = null;
+        filteredRows.forEach(r => {
+          if (r.group && r.group !== currentGroup) {
+            currentGroup = r.group;
+            const srcName   = 'Bank Document';
+            const groupKey = r.group.replace(/\s+/g, '-').toLowerCase();
+            html += `<tr class="group-header" data-group-key="${groupKey}" onclick="toggleGroup('${groupKey}')"><td colspan="5">${escHtml(r.group)} <span style="font-weight:400;opacity:0.7;font-size:10px">— comparing ${srcName} vs Coupa Form</span><em class="toggle-arrow">▼</em></td></tr>`;
+          }
+          const vc = r.status === 'match' ? 'val-match' : r.status === 'mismatch' ? 'val-mismatch' : 'val-missing';
+          // Cell 1: Bank Document value (or raw hint)
+          const cell1 = r.v1
+            ? `<span class="val ${vc}">${escHtml(r.v1)}</span>`
+            : r.h1
+              ? `<span class="val val-hint">${escHtml(r.h1)}</span><div class="hint-note">⚠ raw text (unverified)</div>`
+              : `<span class="val val-missing">Not found</span>`;
+
+          // Cell 2: Coupa Form value (or raw hint)
+          const cell2 = r.v2
+            ? `<span class="val ${vc}">${escHtml(r.v2)}</span>`
+            : r.h2
+              ? `<span class="val val-hint">${escHtml(r.h2)}</span><div class="hint-note">⚠ raw text (unverified)</div>`
+              : `<span class="val val-missing">Not found</span>`;
+
+          const needsVerify = r.status === 'mismatch' || r.status === 'missing';
+          const verifyBtn   = needsVerify
+            ? `<button class="btn-verify" onclick="promptVerifyNote('${r.key}')">Mark as Verified</button>`
+            : '';
+
+          const rowGroupKey = r.group ? r.group.replace(/\s+/g, '-').toLowerCase() : '';
+          const col1Label   = 'Bank Doc';
+          html += `<tr id="row-${r.key}" class="priority-${r.priority}" data-group="${rowGroupKey}">
+            <td class="field-name" data-label="Field">${isUS && r.key === 'routing' ? 'ACH Routing Number' : r.label}</td>
+            <td data-label="${col1Label}">${cell1}</td>
+            <td data-label="Coupa Form">${cell2}</td>
+            <td class="status status-${r.status}" id="status-${r.key}" data-label="Status">${statusIcon(r.status)}${verifyBtn}</td>
+            <td id="diff-${r.key}" data-label="Detail">${r.diffHtml || '—'}</td>
+          </tr>`;
+        });
+        html += `</tbody></table>
+          <p style="font-size:11px;color:#a0aec0;margin-top:10px;">* High-priority fields &nbsp;|&nbsp; ⚠ Raw text = keyword found but value could not be cleanly parsed</p>
+          <div class="all-verified-banner" id="allVerifiedBanner">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            All Items Verified
+            <span class="all-match-sub">— All mismatches and missing fields have been manually reviewed. Good to proceed.</span>
+          </div>`;
+      }
+
+      // ── Remit-To Address dropdown ──────────────────────────────────────────
+      if (remitAddr || remitRegion || remitCity) {
+        // Compare on expanded/normalized address text (abbreviations spelled out, punctuation
+        // stripped) with containment both ways — same approach as the bank_address field check
+        // above. A plain normalize()+equality check falsely flagged addresses that are the same
+        // place but formatted differently (e.g. "St" vs "Street", or one side omitting the country).
+        const naPrimary = normalizeAddress(primaryAddr);
+        const naRemit   = normalizeAddress(remitAddr);
+        const addrMatch = !!(naPrimary && naRemit && (naPrimary === naRemit || naPrimary.includes(naRemit) || naRemit.includes(naPrimary) || sameAddressTokens(naPrimary, naRemit)));
+        html += `
+        <div class="remit-section" id="remitSection">
+          <button class="remit-toggle" onclick="toggleRemit()">
+            <span class="remit-toggle-arrow">&#9660;</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Remit-To Address Information
+            ${remitAddr && primaryAddr
+              ? addrMatch
+                ? `<span class="remit-badge remit-match">&#10003; Matches primary address</span>`
+                : `<span class="remit-badge remit-diff">Different from primary address</span>`
+              : ''
+            }
+          </button>
+          <div class="remit-body">
+            <table class="remit-table"><tbody>
+              ${remitRegion  ? `<tr><td class="remit-label">Region</td><td>${escHtml(remitRegion)}</td></tr>` : ''}
+              ${remitStreet1 ? `<tr><td class="remit-label">Street Address</td><td>${escHtml(remitStreet1)}</td></tr>` : ''}
+              ${remitStreet2 ? `<tr><td class="remit-label">Street Address 2</td><td>${escHtml(remitStreet2)}</td></tr>` : ''}
+              ${remitCity    ? `<tr><td class="remit-label">City</td><td>${escHtml(remitCity)}</td></tr>` : ''}
+              ${remitPostal  ? `<tr><td class="remit-label">Postal Code</td><td>${escHtml(remitPostal)}</td></tr>` : ''}
+              ${remitCountry ? `<tr><td class="remit-label">Country</td><td>${escHtml(remitCountry)}</td></tr>` : ''}
+            </tbody></table>
+            ${remitAddr && primaryAddr && !addrMatch ? `
+            <div class="remit-warn-box">
+              <svg viewBox="0 0 24 24" width="15" height="15" stroke="#b45309" stroke-width="2" fill="none" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              This Remit-To address differs from the Primary Address on file — confirm with the vendor before processing payment.
+            </div>` : ''}
+          </div>
+        </div>`;
+      }
+
+      html += `<hr class="divider" />
+        <div class="raw-section">
+          <button class="raw-toggle" onclick="toggleRawText(this)">
+            <span class="arrow">▼</span> Show Extracted Text Preview
+          </button>
+          <div class="raw-body">
+            <div class="text-grid">
+              <div>
+                <div class="text-box-label">Bank Document — ${escHtml(state.file1.name)}</div>
+                <div class="text-box">${escHtml(text1.slice(0, 2000))}${text1.length > 2000 ? '\n…(truncated)' : ''}</div>
+              </div>
+              <div>
+                <div class="text-box-label">Coupa Form — ${escHtml(state.file2.name)}</div>
+                <div class="text-box">${escHtml(text2.slice(0, 2000))}${text2.length > 2000 ? '\n…(truncated)' : ''}</div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      el.innerHTML = html;
+      collapseUpload();
+      applyDraftIfMatching();
+      saveReviewSnapshot();
+
+      if (mismatches.length === 0 && missing.length === 0 && matches.length > 0) {
+        playBellSound();
+      }
+    } catch (err) {
+      el.innerHTML = `<div class="alert alert-warn">Error processing documents: ${escHtml(err.message)}</div>`;
+    }
+  }
+
+  // ── Document Preview Modal ───────────────────────────────────────
+  let modalZoom = 1.0;
+
+  async function openDocModal(n) {
+    const file = state['file' + n];
+    if (!file) return;
+    const modal   = document.getElementById('docModal');
+    const content = document.getElementById('modalContent');
+    const title   = document.getElementById('modalTitle');
+    modalZoom = 1.0;
+    updateZoomLabel();
+    content.style.transform = '';
+    title.textContent = file.name;
+    content.innerHTML = '<div class="loading"><div class="spinner"></div><div class="loading-msg">Loading document…</div></div>';
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    if (file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(file);
+      content.innerHTML = `<img src="${url}" alt="${file.name}" onload="URL.revokeObjectURL(this.src)">`;
+    } else if (file.type === 'application/pdf') {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument(buf).promise;
+      content.innerHTML = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page     = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 2.0 });
+        const wrap     = document.createElement('div');
+        if (pdf.numPages > 1) {
+          const lbl = document.createElement('div');
+          lbl.className = 'modal-page-label';
+          lbl.textContent = `Page ${i} of ${pdf.numPages}`;
+          wrap.appendChild(lbl);
+        }
+        const canvas   = document.createElement('canvas');
+        canvas.width   = viewport.width;
+        canvas.height  = viewport.height;
+        wrap.appendChild(canvas);
+        content.appendChild(wrap);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      }
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('docModal').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  function closeModalOnBg(e) {
+    if (e.target === document.getElementById('docModal')) closeModal();
+  }
+
+  function zoomModal(delta) {
+    if (delta === 'reset') { modalZoom = 1.0; }
+    else { modalZoom = Math.min(3.0, Math.max(0.4, modalZoom + delta)); }
+    document.getElementById('modalContent').style.transform = `scale(${modalZoom})`;
+    updateZoomLabel();
+  }
+
+  function updateZoomLabel() {
+    document.getElementById('zoomLabel').textContent = Math.round(modalZoom * 100) + '%';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+    if (document.getElementById('docModal').classList.contains('open')) {
+      if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomModal(0.25); }
+      if (e.key === '-')                  { e.preventDefault(); zoomModal(-0.25); }
+      if (e.key === '0')                  { e.preventDefault(); zoomModal('reset'); }
+    }
+  });
+
+  // ── Manual verification ──────────────────────────────────────────
+  // Clicking "Mark as Verified" opens an inline note box rather than instantly
+  // flipping the badge, so the reviewer can record *why* it's OK — this becomes
+  // part of the audit trail (CSV export, vendor history, draft autosave).
+  function promptVerifyNote(key) {
+    const diffCell = document.getElementById('diff-' + key);
+    if (!diffCell) return;
+    diffCell.dataset.prevHtml = diffCell.innerHTML;
+    diffCell.innerHTML = `<div class="verify-note-box">
+      <textarea id="note-${key}" placeholder="Optional note — why is this OK? (e.g. confirmed with vendor by phone)"></textarea>
+      <div class="vnb-actions">
+        <button class="vnb-save" onclick="saveVerifiedNote('${key}')">Save</button>
+        <button class="vnb-cancel" onclick="cancelVerifyNote('${key}')">Cancel</button>
+      </div>
+    </div>`;
+    const ta = document.getElementById('note-' + key);
+    if (ta) ta.focus();
+  }
+
+  function cancelVerifyNote(key) {
+    const diffCell = document.getElementById('diff-' + key);
+    if (diffCell && diffCell.dataset.prevHtml !== undefined) diffCell.innerHTML = diffCell.dataset.prevHtml;
+  }
+
+  function saveVerifiedNote(key) {
+    const row        = document.getElementById('row-' + key);
+    const statusCell = document.getElementById('status-' + key);
+    const diffCell   = document.getElementById('diff-' + key);
+    if (!row || !statusCell) return;
+    const ta     = document.getElementById('note-' + key);
+    const note   = ta ? ta.value.trim() : '';
+    const timestamp = new Date().toLocaleString();
+
+    verifiedNotes[key] = { note, timestamp };
+
+    row.classList.add('row-verified');
+    statusCell.className = 'status status-manually-verified';
+    statusCell.innerHTML = '✓ Verified';
+    if (diffCell) diffCell.innerHTML = `<div class="verified-note-display"><div class="vnd-meta">✓ Verified on ${escHtml(timestamp)}</div>${note ? `<div class="vnd-text">"${escHtml(note)}"</div>` : ''}</div>`;
+    showToast('✓ Field marked as verified');
+    checkAllVerified();
+    saveDraft();
+    saveReviewSnapshot();
+  }
+
+  function playBellSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+      function playNote(freq, startTime, duration, volume) {
+        // Blend sine + triangle for a warm, rich success tone
+        [['sine', 1.0], ['triangle', 0.3]].forEach(([type, amp]) => {
+          const osc  = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, startTime);
+          gain.gain.setValueAtTime(0, startTime);
+          gain.gain.linearRampToValueAtTime(volume * amp, startTime + 0.012);
+          gain.gain.setValueAtTime(volume * amp, startTime + 0.05);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+          osc.start(startTime);
+          osc.stop(startTime + duration);
+        });
+      }
+
+      // Two-note success: E5 → B5 (perfect fifth — uplifting and conclusive)
+      playNote(659.25, ctx.currentTime,        0.6, 0.35); // E5 — quick
+      playNote(987.77, ctx.currentTime + 0.16, 1.0, 0.45); // B5 — sustained
+    } catch (e) {}
+  }
+
+  function checkAllVerified() {
+    const rows = document.querySelectorAll('tbody tr[id^="row-"]');
+    const allDone = Array.from(rows).every(row => {
+      const s = row.querySelector('.status');
+      return s && (s.classList.contains('status-match') || s.classList.contains('status-manually-verified'));
+    });
+    const banner = document.getElementById('allVerifiedBanner');
+    if (!banner) return;
+    const manualBanner = document.getElementById('needsManualBanner');
+    if (allDone) {
+      if (manualBanner) manualBanner.style.display = 'none';
+      playBellSound();
+      banner.innerHTML = `
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        All Items Verified
+        <span class="all-match-sub">— All mismatches and missing fields have been manually reviewed. Good to proceed.</span>`;
+      banner.style.display = 'flex';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  function toggleRawText(btn) {
+    const body = btn.nextElementSibling;
+    const isOpen = body.classList.toggle('open');
+    btn.classList.toggle('open', isOpen);
+    btn.querySelector('.arrow').textContent = isOpen ? '▲' : '▼';
+    btn.childNodes[1].textContent = isOpen ? ' Hide Extracted Text Preview' : ' Show Extracted Text Preview';
+  }
+
+  function statusIcon(s) {
+    if (s === 'match')    return '✓ Match';
+    if (s === 'mismatch') return '✗ Mismatch';
+    return '? Missing';
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Toast notification ───────────────────────────────────────────
+  let _toastTimer = null;
+  function showToast(msg) {
+    let t = document.getElementById('_toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = '_toast';
+      t.className = 'toast';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // ── Export CSV ───────────────────────────────────────────────────
+  function exportCSV() {
+    if (!lastRows.length) return;
+    const headers = ['Field', 'Group', 'Bank Document', 'Coupa Form', 'Status', 'Note', 'Verified At'];
+    const rows = lastRows.map(r => {
+      const vn = verifiedNotes[r.key];
+      return [
+        r.key === 'routing' ? 'ACH Routing Number' : r.label,
+        r.group || '',
+        r.v1 || (r.h1 ? r.h1 + ' (unverified)' : 'Not found'),
+        r.v2 || (r.h2 ? r.h2 + ' (unverified)' : 'Not found'),
+        r.status,
+        vn ? vn.note : '',
+        vn ? vn.timestamp : ''
+      ];
+    });
+    const csv = [headers, ...rows]
+      .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'validation-results.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('CSV exported');
+  }
+
+  // ── Print / Save as PDF ──────────────────────────────────────────
+  function printResults() {
+    window.print();
+  }
+
+  // ── Collapsible field groups ─────────────────────────────────────
+  function toggleGroup(key) {
+    const header = document.querySelector(`tr.group-header[data-group-key="${key}"]`);
+    if (!header) return;
+    const rows = document.querySelectorAll(`tr[data-group="${key}"]`);
+    const isCollapsed = header.classList.toggle('collapsed');
+    rows.forEach(r => { r.style.display = isCollapsed ? 'none' : ''; });
+  }
+
+  function toggleRemit() {
+    document.getElementById('remitSection').classList.toggle('rt-collapsed');
+  }
+</script>
+</body>
+</html>
